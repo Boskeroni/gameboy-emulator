@@ -2,14 +2,99 @@ use std::{rc::Rc, cell::RefCell};
 use crate::memory::Memory;
 use crate::{registers::*, combine_u8s};
 
-const Z_FLAG: u8 = 7;
-const N_FLAG: u8 = 6;
 //https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/ goddamn is that smart
-const H_FLAG: u8 = 5;
-const C_FLAG: u8 = 4; 
-
 fn half_carry_u8(a: u8, b: u8) -> bool {
     (((a & 0xf) + (b & 0xf)) & 0x10) == 0x10
+}
+
+/// these opcodes only modify the data provided and flags so 
+/// no point in having them be stored in the struct / also avoids 
+/// mutable borrowing errors
+fn inc(data: &mut u8, flags: &mut Flags) {
+    let half_carried = half_carry_u8(*data, 1); 
+    flags.set_h_flag(half_carried);
+    *data += 1;
+    flags.set_z_flag(*data == 0);
+    flags.set_n_flag(false);
+}
+fn dec(data: &mut u8, flags: &mut Flags) {
+    *data -= 1;
+    flags.set_z_flag(*data == 0);
+    flags.set_n_flag(true);
+    flags.set_h_flag(data.trailing_zeros() > 3);
+}
+fn rr(reg: &mut u8, flags: &mut Flags) {
+    // checks if a carry will occur in this shift
+    let temp = *reg & 0b0000_0001;
+    *reg = reg.rotate_right(1) ^ ((flags.get_c_flag() as u8)<<7);
+    flags.set_c_flag(temp!=0);
+    flags.set_n_flag(false);
+    flags.set_h_flag(false);
+    flags.set_z_flag(*reg==0);
+}
+fn rl(reg: &mut u8, flags: &mut Flags){
+    // checks if a carry will occur in this shift
+    let carried = *reg & 0b1000_0000;
+    flags.set_c_flag(carried>0);
+    flags.set_n_flag(false);
+    flags.set_h_flag(false);
+    *reg = reg.rotate_left(1) ^ (flags.get_c_flag() as u8)
+}
+fn rlc(reg: &mut u8, flags: &mut Flags) {
+    *reg = reg.rotate_left(1);
+    flags.set_c_flag(*reg&0b0000_0001%2 == 0); // checks if 1st bit is set
+    flags.set_h_flag(false);
+    flags.set_n_flag(false);
+    flags.set_z_flag(*reg==0);
+}
+fn rrc(reg: &mut u8, flags: &mut Flags) {
+    *reg = reg.rotate_right(1);
+    flags.set_c_flag(*reg&0b1000_0000>0); // checks if 7th bit is set
+    flags.set_h_flag(false);
+    flags.set_n_flag(false);
+    flags.set_z_flag(*reg==0);
+}
+fn sla(reg: &mut u8, flags: &mut Flags) {
+    flags.set_c_flag(*reg>0b1000_0000);
+    *reg = *reg << 1;
+    flags.set_z_flag(*reg==0);
+    flags.set_h_flag(false);
+    flags.set_n_flag(false);
+}
+fn sra(reg: &mut u8, flags: &mut Flags) {
+    flags.set_c_flag(*reg%2==1); // meaning the 0th bit is set
+    *reg = (*reg >> 1) + (*reg & 0b1000_0000);
+    flags.set_h_flag(false);
+    flags.set_n_flag(false);
+    flags.set_z_flag(*reg==0);
+}
+fn swap(reg: &mut u8, flags: &mut Flags) {
+    let temp = *reg & 0b0000_1111;
+    *reg = (*reg >> 4) + (temp << 4);
+    flags.set_z_flag(*reg==0);
+    flags.set_c_flag(false);
+    flags.set_h_flag(false);
+    flags.set_n_flag(false);
+}
+fn srl(reg: &mut u8, flags: &mut Flags) {
+    flags.set_c_flag(*reg%2==1); // meaning the 0th bit is set
+    *reg = *reg >> 1;
+    flags.set_z_flag(*reg==0);
+    flags.set_n_flag(false);
+    flags.set_h_flag(false);
+}
+fn bit(index: u8, reg: &mut u8, flags: &mut Flags) {
+    flags.set_n_flag(false);
+    flags.set_h_flag(true);
+    let bit_index = 0b0000_0001 << index;
+    let is_set = (*reg & bit_index) != 0;
+    flags.set_z_flag(is_set);
+}
+fn res(index: u8, reg: &mut u8) {
+    *reg &= !(0b0000_0001 << index);
+}
+fn set(index: u8, reg: &mut u8) {
+    *reg |= 0b0000_0001 << index;
 }
 
 pub struct Cpu {
@@ -27,14 +112,8 @@ impl Cpu {
         }
     }
 
-    fn hl_mem(&self) -> u8 {
-        self.memory.borrow().load(self.regs.hl())
-    }
-    fn set_hl_mem(&self, data: u8) {
-        self.memory.borrow_mut().write_u8(self.regs.hl(), data)
-    }
-
-    // loading opcodes and words
+    /// allows data to be collected from the ROM faithfully to how 
+    /// CPUs actually work.
     fn get_next(&mut self) -> u8 {
         self.rom[self.regs.pc()]
     }
@@ -42,107 +121,70 @@ impl Cpu {
         combine_u8s(self.get_next(), self.get_next())
     }
 
-    /// the actual reusable opcodes
-    /// they don't contribute to the (m/t)-cycles
-    fn inc(&mut self, data: u8) -> u8 {
-        self.regs.set_z_flag(data+1 == 0);
-        self.regs.set_n_flag(false);
-        let half_carried = half_carry_u8(data, 1); 
-        self.regs.set_h_flag(half_carried);
-        data+1
+
+    fn hl_mem(&self) -> u8 {
+        self.memory.borrow().load(self.regs.hl())
     }
-    fn dec(&mut self, data: u8) -> u8 {
-        let ndata = data - 1;
-        self.regs.set_z_flag(ndata == 0);
-        self.regs.set_n_flag(true);
-        self.regs.set_h_flag(ndata.trailing_zeros() > 3);
-        ndata
+    fn set_hl_mem(&self, data: u8) {
+        self.memory.borrow_mut().write_u8(self.regs.hl(), data)
     }
-    fn rr(&mut self, reg: &mut u8) {
-        let temp = *reg & 0b0000_0001;
-        *reg = reg.rotate_right(1) ^ ((self.regs.get_c_flag() as u8)<<7);
-        self.regs.set_c_flag(temp>0);
-        self.regs.set_n_flag(false);
-        self.regs.set_h_flag(false);
-        self.regs.set_z_flag(*reg==0);
-    }
-    fn rl(&mut self, reg: &mut u8) {
-        let temp = *reg & 0b1000_0000;
-        *reg = reg.rotate_left(1) ^ (self.regs.get_c_flag() as u8);
-        self.regs.set_c_flag(temp>0);
-        self.regs.set_n_flag(false);
-        self.regs.set_h_flag(false);
-    }
-    fn rlc(&mut self, reg: &mut u8) {
-        *reg = reg.rotate_left(1);
-        self.regs.set_c_flag(*reg&0b0000_0001>0); // checks if 1st bit is set
-        self.regs.set_h_flag(false);
-        self.regs.set_n_flag(false);
-        self.regs.set_z_flag(*reg==0);
-    }
-    fn rrca(&mut self, reg: &mut u8) {
-        *reg = reg.rotate_right(1);
-        self.regs.set_c_flag(*reg&0b1000_0000>0); // checks if 7th bit is set
-        self.regs.set_h_flag(false);
-        self.regs.set_n_flag(false);
-        self.regs.set_z_flag(*reg==0);
-    }
+
     fn add(&mut self, data: u8) {
-        self.regs.set_h_flag(half_carry_u8(self.regs.a, data));
+        self.regs.f.set_h_flag(half_carry_u8(self.regs.a, data));
         self.regs.a += data;
-        self.regs.set_z_flag(self.regs.a == 0);
-        self.regs.set_n_flag(false);
-        self.regs.set_c_flag(self.regs.a<data)
+        self.regs.f.set_z_flag(self.regs.a == 0);
+        self.regs.f.set_n_flag(false);
+        self.regs.f.set_c_flag(self.regs.a<data)    
     }
     fn adc(&mut self, data: u8) {
-        self.regs.set_h_flag(half_carry_u8(self.regs.a, data));
-        self.regs.a += data + self.regs.get_c_flag() as u8;
-        self.regs.set_z_flag(self.regs.a == 0);
-        self.regs.set_n_flag(false);
-        self.regs.set_c_flag(self.regs.a<data);
+        self.regs.f.set_h_flag(half_carry_u8(self.regs.a, data));
+        self.regs.a += data + self.regs.f.get_c_flag() as u8;
+        self.regs.f.set_z_flag(self.regs.a == 0);
+        self.regs.f.set_n_flag(false);
+        self.regs.f.set_c_flag(self.regs.a<data);
     }
     fn sub(&mut self, data: u8) {
-        self.regs.set_h_flag(half_carry_u8(self.regs.a, data));
-        self.regs.set_c_flag(self.regs.a<data);
+        self.regs.f.set_h_flag(half_carry_u8(self.regs.a, data));
+        self.regs.f.set_c_flag(self.regs.a<data);
         self.regs.a -= data;
-        self.regs.set_z_flag(self.regs.a==0);
-        self.regs.set_n_flag(true); 
+        self.regs.f.set_z_flag(self.regs.a==0);
+        self.regs.f.set_n_flag(true); 
     }
     fn sbc(&mut self, data: u8) {
         let comparison = self.regs.a;
-        self.regs.set_h_flag(half_carry_u8(self.regs.a, data));
-        self.regs.a -= data + self.regs.get_c_flag() as u8;
-        self.regs.set_z_flag(self.regs.a==0);
-        self.regs.set_n_flag(true);
-        self.regs.set_c_flag(self.regs.a>comparison);
+        self.regs.f.set_h_flag(half_carry_u8(self.regs.a.clone(), data));
+        self.regs.a -= data + self.regs.f.get_c_flag() as u8;
+        self.regs.f.set_z_flag(self.regs.a==0);
+        self.regs.f.set_n_flag(true);
+        self.regs.f.set_c_flag(self.regs.a>comparison);
     }
     fn and(&mut self, data: u8) {
         self.regs.a &= data;
-        self.regs.set_z_flag(self.regs.a==0);
-        self.regs.set_n_flag(false);
-        self.regs.set_h_flag(true);
-        self.regs.set_c_flag(false);
+        self.regs.f.set_z_flag(self.regs.a==0);
+        self.regs.f.set_n_flag(false);
+        self.regs.f.set_h_flag(true);
+        self.regs.f.set_c_flag(false);
     }
     fn xor(&mut self, data: u8) {
         self.regs.a ^= data;
-        self.regs.set_z_flag(self.regs.a==0);
-        self.regs.set_n_flag(false);
-        self.regs.set_h_flag(false);
-        self.regs.set_c_flag(false);
+        self.regs.f.set_z_flag(self.regs.a==0);
+        self.regs.f.set_n_flag(false);
+        self.regs.f.set_h_flag(false);
+        self.regs.f.set_c_flag(false);
     }
     fn or(&mut self, data: u8) {
         self.regs.a |= data;
-        self.regs.set_z_flag(self.regs.a==0);
-        self.regs.set_n_flag(false);
-        self.regs.set_h_flag(false);
-        self.regs.set_c_flag(false);
+        self.regs.f.set_z_flag(self.regs.a==0);
+        self.regs.f.set_n_flag(false);
+        self.regs.f.set_h_flag(false);
+        self.regs.f.set_c_flag(false);
     }
-    /// it is used for flags but dont want the a to update
     fn cp(&mut self, data: u8) {
         let temp = self.regs.a;
         self.sub(data);
         self.regs.a = temp;
     }
+
 
     pub fn process_next(&mut self) {  
         let opcode = self.get_next();
@@ -158,27 +200,24 @@ impl Cpu {
                 self.memory.borrow_mut().write_u8(address, self.regs.a)
             },
             0x03 => self.regs.set_bc(self.regs.bc() + 1),
-            0x04 => self.regs.b = self.inc(self.regs.b),
-            0x05 => self.regs.b = self.dec(self.regs.b),
+            0x04 => inc(&mut self.regs.b, &mut self.regs.f),
+            0x05 => dec(&mut self.regs.b, &mut self.regs.f),
             0x06 => self.regs.b = self.get_next(),
-            0x07 => {
-                let reg = &mut self.regs.a;
-                self.rlc(reg)
-            },
+            0x07 => rlc(&mut self.regs.a, &mut self.regs.f),
             0x08 => {
-                let operand = combine_u8s(self.get_next(), self.get_next());
+                let operand = self.get_word();
                 self.memory.borrow_mut().write_u16(operand, self.regs.sp)
             }
             0x09 => todo!(),
             0x0A => self.regs.a = self.memory.borrow().load(self.regs.bc()),
             0x0B => self.regs.set_bc(self.regs.bc() - 1),
-            0x0C => self.regs.c = self.inc(self.regs.c),
-            0x0D => self.regs.c = self.dec(self.regs.c),
+            0x0C => inc(&mut self.regs.c, &mut self.regs.f),
+            0x0D => dec(&mut self.regs.c, &mut self.regs.f),
             0x0E => self.regs.c = self.get_next(),
-            0x0F => todo!(), //self.rrca(),
+            0x0F => rrc(&mut self.regs.a, &mut self.regs.f),
             0x10 => todo!(),
             0x11 => {
-                let operand = combine_u8s(self.get_next(), self.get_next());
+                let operand = self.get_word();
                 self.regs.set_de(operand);
             }
             0x12 => {
@@ -186,18 +225,18 @@ impl Cpu {
                 self.memory.borrow_mut().write_u8(address, self.regs.a);
             }
             0x13 => self.regs.set_de(self.regs.de() + 1),
-            0x14 => self.regs.d = self.inc(self.regs.d),
-            0x15 => self.regs.d = self.dec(self.regs.d),
+            0x14 => inc(&mut self.regs.d, &mut self.regs.f),
+            0x15 => dec(&mut self.regs.d, &mut self.regs.f),
             0x16 => self.regs.d = self.get_next(),
-            0x17 => todo!(), //self.rla(),
+            0x17 => rl(&mut self.regs.a, &mut self.regs.f),
             0x18 => todo!(),
             0x19 => todo!(),
             0x1A => self.regs.a = self.memory.borrow().load(self.regs.de()),
             0x1B => self.regs.set_de(self.regs.de() - 1),
-            0x1C => self.regs.e = self.inc(self.regs.e),
-            0x1D => self.regs.e = self.dec(self.regs.e),
+            0x1C => inc(&mut self.regs.e, &mut self.regs.f),
+            0x1D => dec(&mut self.regs.e, &mut self.regs.f),
             0x1E => self.regs.e = self.get_next(),
-            0x1F => todo!(), //self.rra(),
+            0x1F => rr(&mut self.regs.a, &mut self.regs.f),
             0x20 => todo!(),
             0x21 => {
                 let operand = combine_u8s(self.get_next(), self.get_next());
@@ -209,8 +248,8 @@ impl Cpu {
                 self.regs.set_hl(self.regs.hl()+1);
             }
             0x23 => self.regs.set_hl(self.regs.hl()+1),
-            0x24 => self.regs.h = self.inc(self.regs.h),
-            0x25 => self.regs.h = self.dec(self.regs.h),
+            0x24 => inc(&mut self.regs.h, &mut self.regs.f),
+            0x25 => dec(&mut self.regs.h, &mut self.regs.f),
             0x26 => self.regs.h = self.get_next(),
             0x27 => todo!(),
             0x28 => todo!(),
@@ -220,10 +259,10 @@ impl Cpu {
                 self.regs.set_hl(self.regs.hl()+1);
             }
             0x2B => self.regs.set_hl(self.regs.hl()-1),
-            0x2C => self.regs.l = self.inc(self.regs.l),
-            0x2D => self.regs.l = self.dec(self.regs.l),
+            0x2C => inc(&mut self.regs.l, &mut self.regs.f),
+            0x2D => dec(&mut self.regs.l, &mut self.regs.f),
             0x2E => self.regs.l = self.get_next(),
-            0x2F => todo!(),
+            0x2F => self.regs.a = !self.regs.a,
             0x30 => todo!(),
             0x31 => self.regs.sp = combine_u8s(self.get_next(), self.get_next()),
             0x32 => {
@@ -234,15 +273,15 @@ impl Cpu {
             0x33 => self.regs.sp += 1,
             0x34 => {
                 let address = self.regs.hl();
-                let data = self.memory.borrow().load(address);
-                let inc = self.inc(data);
-                self.memory.borrow_mut().write_u8(address, inc);
+                let mut data = self.memory.borrow().load(address);
+                inc(&mut data, &mut self.regs.f);
+                self.memory.borrow_mut().write_u8(address, data);
             }
             0x35 => {
                 let address = self.regs.hl();
-                let data = self.memory.borrow().load(address);
-                let dec = self.dec(data);
-                self.memory.borrow_mut().write_u8(address, dec);
+                let mut data = self.memory.borrow().load(address);
+                dec(&mut data, &mut self.regs.f);
+                self.memory.borrow_mut().write_u8(address, data);
             }
             0x36 => {
                 let address = self.regs.hl();
@@ -257,10 +296,10 @@ impl Cpu {
                 self.regs.set_hl(self.regs.hl()-1);
             }
             0x3B => self.regs.sp -= 1,
-            0x3C => self.regs.a = self.inc(self.regs.a),
-            0x3D => self.regs.a = self.dec(self.regs.a),
+            0x3C => inc(&mut self.regs.a, &mut self.regs.f),
+            0x3D => dec(&mut self.regs.a, &mut self.regs.f),
             0x3E => self.regs.a = self.get_next(),
-            0x3F => todo!(),
+            0x3F => self.regs.f.set_c_flag(!self.regs.f.get_c_flag()),
             0x40 => {}, // redundant opcode "LD B, B"
             0x41 => self.regs.b = self.regs.c,
             0x42 => self.regs.b = self.regs.d,
@@ -395,19 +434,32 @@ impl Cpu {
 
     fn process_prefixed(&mut self) {
         let opcode = self.get_next();
-        let _reg = match opcode % 8 {
+        let mut binding = self.hl_mem();
+        let reg = match opcode % 8 {
             0 => &mut self.regs.b,
             1 => &mut self.regs.c,
             2 => &mut self.regs.d,
             3 => &mut self.regs.e,
             4 => &mut self.regs.h,
             5 => &mut self.regs.l,
-            //6 => binding.load_mut(self.regs.hl()),
+            6 => &mut binding,
             7 => &mut self.regs.a,
             _ => panic!("broke maths")
         };
-        //let instruction = match opcode / 8 {
-        //    1 => 
-        //}
+        let instruction = opcode / 8;
+        match instruction {
+            0 => rlc(reg, &mut self.regs.f),
+            1 => rrc(reg, &mut self.regs.f),
+            2 => rl(reg, &mut self.regs.f),
+            3 => rr(reg, &mut self.regs.f),
+            4 => sla(reg, &mut self.regs.f),
+            5 => sra(reg, &mut self.regs.f),
+            6 => swap(reg, &mut self.regs.f),
+            7 => srl(reg, &mut self.regs.f),
+            8..=15 => bit(instruction-8, reg, &mut self.regs.f),
+            16..=23 => res(instruction-16, reg),
+            24..=31 => set(instruction-24, reg),
+            _ => panic!("invalid instruction")
+        }
     }
 }

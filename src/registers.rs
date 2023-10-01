@@ -1,5 +1,43 @@
 use crate::{split_u16, combine_u8s};
 
+///  Flag Register
+///   ________________________________
+///  | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
+///  --------------------------------
+/// | Z | N | H | C | 0 | 0 | 0 | 0 |
+/// --------------------------------
+pub struct Flags {
+    z: bool,
+    n: bool,
+    h: bool,
+    c: bool,
+}
+impl Flags {
+    fn new() -> Self {
+        Self {
+            z: false,
+            n: false,
+            h: false,
+            c: false,
+        }
+    }
+
+    pub fn set_z_flag(&mut self, data: bool) {
+        self.z = data
+    }
+    pub fn set_n_flag(&mut self, data: bool) {
+        self.n = data
+    }
+    pub fn set_h_flag(&mut self, data: bool) {
+        self.h = data
+    }
+    pub fn set_c_flag(&mut self, data: bool) {
+        self.c = data 
+    }
+    pub fn get_c_flag(&self) -> bool {
+        self.c
+    }
+}
 
 /// this struct should contain absolutely 0 logic of the program
 /// it should simply allow for allocation of registers and reading
@@ -7,13 +45,8 @@ use crate::{split_u16, combine_u8s};
 /// it won't question anything just trust the data
 pub struct Registers {
     pub a: u8,
-    ///  Flag Register
-    ///   ________________________________
-    ///  | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
-    ///  --------------------------------
-    /// | Z | N | H | C | 0 | 0 | 0 | 0 |
-    /// --------------------------------
-    pub f: u8,
+
+    pub f: Flags,
     pub b: u8,
     pub c: u8,
     pub d: u8,
@@ -34,7 +67,7 @@ impl Registers {
             c: 0,
             d: 0,
             e: 0,
-            f: 0,
+            f: Flags::new(),
             h: 0,
             l: 0,
             sp: 0xFFFE,
@@ -42,21 +75,7 @@ impl Registers {
         }
     }
 
-    pub fn set_z_flag(&mut self, data: bool) {
-        self.f |= (data as u8) << 7 
-    }
-    pub fn set_n_flag(&mut self, data: bool) {
-        self.f |= (data as u8) << 6 
-    }
-    pub fn set_h_flag(&mut self, data: bool) {
-        self.f |= (data as u8) << 5 
-    }
-    pub fn set_c_flag(&mut self, data: bool) {
-        self.f |= (data as u8) << 4 
-    }
-    pub fn get_c_flag(&self) -> bool {
-        self.f>>4 == 1
-    }
+
 
     // 16 bit register collectors
     pub fn set_bc(&mut self, data: u16) {

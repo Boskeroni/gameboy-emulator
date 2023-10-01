@@ -1,5 +1,3 @@
-use std::ops::IndexMut;
-
 use crate::split_u16;
 
 pub struct Memory {
@@ -22,9 +20,5 @@ impl Memory {
     }
     pub fn load(&self, address: u16) -> u8 {
         self.memory[address as usize]
-    }
-
-    pub fn load_mut(&mut self, address: u16) -> &mut u8 {
-        self.memory.index_mut(address as usize)
     }
 }
