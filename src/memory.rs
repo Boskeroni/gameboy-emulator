@@ -7,7 +7,7 @@ pub struct Memory {
 impl Memory {
     pub fn new() -> Self {
         let size: usize = 16;
-        Self { memory: Vec::with_capacity(size.pow(4))}
+        Self { memory: vec![0; size.pow(4)]}
     }
 
     pub fn write_u8(&mut self, address: u16, data: u8) {
