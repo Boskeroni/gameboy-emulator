@@ -50,7 +50,10 @@ impl Flags {
     }
 
     fn as_u8(&self) -> u8 {
-        (self.z as u8) << 7 | (self.n as u8) << 6 | (self.h as u8) << 5 | (self.c as u8) << 4
+        (self.z as u8) << 7 | 
+        (self.n as u8) << 6 | 
+        (self.h as u8) << 5 | 
+        (self.c as u8) << 4
     }
 }
 
@@ -71,7 +74,7 @@ pub struct Registers {
     pub sp: u16,
     /// this is meant to be u16 but its easier if its just a usize
     /// because of array indexing
-    pc: usize,
+    pub pc: usize,
 }
 
 impl Registers {
@@ -123,12 +126,16 @@ impl Registers {
 
     pub fn pc(&mut self) -> usize {
         self.pc += 1;
-        self.pc - 1
+        self.pc-1
     }
     pub fn set_pc(&mut self, val: u16) {
         self.pc = val as usize;
     }
     pub fn jump_pc(&mut self, val: i8) {
-        self.pc.checked_add_signed(val as isize).unwrap();
+        if val >= 0 {
+            self.pc += val as usize;
+        } else {
+            self.pc -= val.abs() as usize;
+        }
     }
 }

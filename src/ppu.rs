@@ -14,7 +14,7 @@ impl Ppu {
     fn load_tile_map(&self, index: u8) -> [u8; 1024] {
         self.memory.borrow().load_map(index)
     }
-    fn load_object(&self, index: u8) -> [u8; 4] {
-        //self.memory.borrow().load_object(index)
-    }
+    //fn load_object(&self, index: u8) -> [u8; 4] {
+    //    //self.memory.borrow().load_object(index)
+    //}
 }

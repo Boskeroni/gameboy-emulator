@@ -1,7 +1,8 @@
 mod cpu;
 mod memory;
 mod registers;
-mod ppu;
+//mod ppu;
+mod opcodes;
 
 use std::{env, cell::RefCell, rc::Rc};
 use cpu::Cpu;
@@ -40,8 +41,8 @@ fn main() {
         // used for outputs during blarggs tests and since thatll be
         // all the gameboy roms ill be running for a while no point
         // in it being a seperate function. itll be easily deletable later
-        if memory.borrow().load(0xFF02) == 0x81 {
-            let c = memory.borrow().load(0xFF01) as char;
+        if memory.borrow().read(0xFF02) == 0x81 {
+            let c = memory.borrow().read(0xFF01) as char;
             print!("{c}");
             memory.borrow_mut().write_u8(0xFF02, 0);
         }

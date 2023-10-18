@@ -6,7 +6,6 @@ pub struct Memory {
 
 impl Memory {
     pub fn new() -> Self {
-        let size: usize = 16;
         Self { memory: vec![0; 65536]}
     }
 
@@ -18,10 +17,14 @@ impl Memory {
         self.memory[address as usize] = store1;
         self.memory[(address+1) as usize] = store2;
     }
-    pub fn load(&self, address: u16) -> u8 {
+    pub fn read(&self, address: u16) -> u8 {
         self.memory[address as usize]
     }
+    pub fn read_mut(&mut self, address: u16) -> &mut u8 {
+        self.memory.get_mut(address as usize).unwrap()
+    }
     /// loading calls for the ppu
+    /// returns a u128 as it is more memory efficient
     pub fn load_tile(&self, index: u8) -> u128 {
         // using $8000 addressing, idk why the other one exists
         let addressing = 0x8000 + (index * 16) as usize;
@@ -45,10 +48,9 @@ impl Memory {
     /// is flawed
     pub fn load_map(&self, index: u8) -> [u8; 1024] {
         if index > 1 {
-            panic!("invalid map index you dumbass");
+            panic!("invalid map index you dumbass {index}");
         }
         let address = 0x9800 + ((index as usize)*1024);
         self.memory[address..(address+1024)].try_into().unwrap()
     }
-    /// the object 
 }
