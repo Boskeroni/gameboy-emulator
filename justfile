@@ -22,3 +22,5 @@ test-10:
     cargo run blarggs/10-bit.gb
 test-11:
     cargo run blarggs/11-op-hl.gb
+test-full:
+    cargo run blarggs/cpu_instrs.gb

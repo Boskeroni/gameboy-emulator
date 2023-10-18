@@ -86,7 +86,7 @@ impl Registers {
             h: 0,
             l: 0,
             sp: 0xFFFE,
-            pc: 0xFF,
+            pc: 0x100,
         }
     }
 
@@ -123,7 +123,7 @@ impl Registers {
 
     pub fn pc(&mut self) -> usize {
         self.pc += 1;
-        self.pc
+        self.pc - 1
     }
     pub fn set_pc(&mut self, val: u16) {
         self.pc = val as usize;

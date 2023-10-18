@@ -1,6 +1,6 @@
 use std::{rc::Rc, cell::RefCell};
 use crate::memory::Memory;
-use crate::{registers::*, combine_u8s, split_u16};
+use crate::{registers::*, combine_u8s};
 
 //https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/ goddamn is that smart
 fn half_carry_u8_add(a: u8, b: u8) -> bool {

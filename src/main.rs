@@ -1,6 +1,7 @@
 mod cpu;
 mod memory;
 mod registers;
+mod ppu;
 
 use std::{env, cell::RefCell, rc::Rc};
 use cpu::Cpu;
