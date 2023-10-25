@@ -25,7 +25,7 @@ impl Memory {
     }
     /// loading calls for the ppu
     /// returns a u128 as it is more memory efficient
-    pub fn load_tile(&self, index: u8) -> u128 {
+    pub fn read_tile(&self, index: u8) -> u128 {
         // using $8000 addressing, idk why the other one exists
         let addressing = 0x8000 + (index * 16) as usize;
         let mut tile_data: u128 = 0;
@@ -46,11 +46,19 @@ impl Memory {
     /// the index will only every be a 0 or 1 
     /// so there is little chance of it erroring unless the gameboy file
     /// is flawed
-    pub fn load_map(&self, index: u8) -> [u8; 1024] {
+    pub fn read_map(&self, index: u8) -> [u8; 1024] {
         if index > 1 {
             panic!("invalid map index you dumbass {index}");
         }
         let address = 0x9800 + ((index as usize)*1024);
         self.memory[address..(address+1024)].try_into().unwrap()
+    }
+    /// loads the objects along with attributes
+    pub fn read_object(&self, index: u8) -> [u8; 4] {
+        if index >= 40 {
+            panic!("invalid object index");
+        }
+        let location = (index * 4) as usize + 0xFE00;
+        self.memory[location..location+4].try_into().unwrap()
     }
 }
