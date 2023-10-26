@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use crate::split_u16;
 
 pub struct Memory {
@@ -20,8 +22,8 @@ impl Memory {
     pub fn read(&self, address: u16) -> u8 {
         self.memory[address as usize]
     }
-    pub fn read_mut(&mut self, address: u16) -> &mut u8 {
-        self.memory.get_mut(address as usize).unwrap()
+    pub fn read_mut(&self, address: u16) -> RefCell<u8> {
+        RefCell::new(self.memory[address as usize])
     }
     /// loading calls for the ppu
     /// returns a u128 as it is more memory efficient

@@ -16,7 +16,6 @@ pub fn half_carry_u16(a: u16, b: u16) -> bool {
 /// no point in having them be stored in the struct / also avoids 
 /// mutable borrowing errors
 pub fn add_u16(reg1: u16, reg2: u16, flags: &mut Flags) -> u16 {
-    print!("add {reg1} and {reg2}");
     let half_carried = half_carry_u16(reg1, reg2);
     flags.set_h_flag(half_carried);
     let sum = reg1 + reg2;

@@ -117,6 +117,14 @@ impl Registers {
     pub fn hl(&self) -> u16 {
         combine_u8s(self.l, self.h)
     }
+    pub fn hli(&mut self) -> u16 {
+        self.set_hl(self.hl()+1);
+        self.hl()-1
+    }
+    pub fn hld(&mut self) -> u16 {
+        self.set_hl(self.hl()-1);
+        self.hl()+1
+    }
     pub fn af(&self) -> u16 {
         combine_u8s(self.f.as_u8(), self.a)
     }
