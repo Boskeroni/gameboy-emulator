@@ -1,14 +1,21 @@
-use std::cell::RefCell;
-
 use crate::split_u16;
 
 pub struct Memory {
-    memory: Vec<u8>,
+    pub memory: Vec<u8>,
 }
 
 impl Memory {
-    pub fn new() -> Self {
-        Self { memory: vec![0; 65536]}
+    pub fn new(rom: Vec<u8>) -> Self {
+        // for now all the roms will only be up to 0x8000 in length
+        // so we can just extend till we reach the quota
+        let mut memory = rom;
+        if memory.len() > 0x8000 {
+            panic!("not going to handle these yet")
+        }
+        let padding_amount = 65536 - memory.len();
+        let padding_vec = vec![0; padding_amount];
+        memory.extend(padding_vec);
+        Self { memory }
     }
 
     pub fn write_u8(&mut self, address: u16, data: u8) {
@@ -21,9 +28,6 @@ impl Memory {
     }
     pub fn read(&self, address: u16) -> u8 {
         self.memory[address as usize]
-    }
-    pub fn read_mut(&self, address: u16) -> RefCell<u8> {
-        RefCell::new(self.memory[address as usize])
     }
     /// loading calls for the ppu
     /// returns a u128 as it is more memory efficient

@@ -15,16 +15,7 @@ pub fn half_carry_u16(a: u16, b: u16) -> bool {
 /// these opcodes only modify the data provided and flags so 
 /// no point in having them be stored in the struct / also avoids 
 /// mutable borrowing errors
-pub fn add_u16(reg1: u16, reg2: u16, flags: &mut Flags) -> u16 {
-    let half_carried = half_carry_u16(reg1, reg2);
-    flags.set_h_flag(half_carried);
-    let sum = reg1 + reg2;
-    flags.set_c_flag(sum<reg1);
-    flags.set_n_flag(false);
-    sum
-}
 pub fn inc(data: &mut u8, flags: &mut Flags) {
-    print!("inc {data}");
     let half_carried = half_carry_u8_add(*data, 1); 
     flags.set_h_flag(half_carried);
     *data = data.wrapping_add(1);
@@ -32,30 +23,27 @@ pub fn inc(data: &mut u8, flags: &mut Flags) {
     flags.set_n_flag(false);
 }
 pub fn dec(data: &mut u8, flags: &mut Flags) {
-    print!("dec {data}");
     flags.set_h_flag(half_carry_u8_sub(*data, 1));
     *data -= 1;
     flags.set_z_flag(*data == 0);
     flags.set_n_flag(true);
 }
 pub fn rr(reg: &mut u8, flags: &mut Flags) {
-    print!("right rotate {reg}");
     // checks if a carry will occur in this shift
     let temp = *reg & 0b0000_0001;
-    *reg = reg.rotate_right(1) ^ ((flags.get_c_flag() as u8)<<7);
+    *reg = reg.rotate_right(1) ^ ((flags.c_flag() as u8)<<7);
     flags.set_c_flag(temp!=0);
     flags.set_n_flag(false);
     flags.set_h_flag(false);
     flags.set_z_flag(*reg==0);
 }
 pub fn rl(reg: &mut u8, flags: &mut Flags){
-    print!("left rotate {reg}");
     // checks if a carry will occur in this shift
     let carried = *reg & 0b1000_0000;
     flags.set_c_flag(carried>0);
     flags.set_n_flag(false);
     flags.set_h_flag(false);
-    *reg = reg.rotate_left(1) ^ (flags.get_c_flag() as u8)
+    *reg = reg.rotate_left(1) ^ (flags.c_flag() as u8)
 }
 pub fn rlc(reg: &mut u8, flags: &mut Flags) {
     *reg = reg.rotate_left(1);

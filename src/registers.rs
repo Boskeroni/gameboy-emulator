@@ -30,24 +30,15 @@ impl Flags {
         }
     }
 
-    pub fn set_z_flag(&mut self, data: bool) {
-        self.z = data
-    }
-    pub fn set_n_flag(&mut self, data: bool) {
-        self.n = data
-    }
-    pub fn set_h_flag(&mut self, data: bool) {
-        self.h = data
-    }
-    pub fn set_c_flag(&mut self, data: bool) {
-        self.c = data 
-    }
-    pub fn get_c_flag(&self) -> bool {
-        self.c
-    }
-    pub fn get_z_flag(&self) -> bool {
-        self.z
-    }
+    pub fn set_z_flag(&mut self, data: bool) { self.z = data }
+    pub fn set_n_flag(&mut self, data: bool) { self.n = data }
+    pub fn set_h_flag(&mut self, data: bool) { self.h = data }
+    pub fn set_c_flag(&mut self, data: bool) { self.c = data }
+
+    pub fn c_flag(&self) -> bool { self.c }
+    pub fn z_flag(&self) -> bool { self.z }
+    pub fn n_flag(&self) -> bool { self.n }
+    pub fn h_flag(&self) -> bool { self.h }
 
     fn as_u8(&self) -> u8 {
         (self.z as u8) << 7 | (self.n as u8) << 6 | (self.h as u8) << 5 | (self.c as u8) << 4
@@ -69,9 +60,8 @@ pub struct Registers {
     pub h: u8,
     pub l: u8,
     pub sp: u16,
-    /// this is meant to be u16 but its easier if its just a usize
-    /// because of array indexing
-    pc: usize,
+    // for debug purposes it is public
+    pub pc: u16,
 }
 
 impl Registers {
@@ -89,9 +79,6 @@ impl Registers {
             pc: 0x100,
         }
     }
-
-
-
     // 16 bit register collectors
     pub fn set_bc(&mut self, data: u16) {
         (self.b, self.c) = split_u16(data);
@@ -129,19 +116,18 @@ impl Registers {
         combine_u8s(self.f.as_u8(), self.a)
     }
 
-    pub fn pc(&mut self) -> usize {
+    pub fn pc(&mut self) -> u16 {
         self.pc += 1;
-        print!("pc: {}", self.pc);
-        self.pc-1
+        self.pc - 1
     }
     pub fn set_pc(&mut self, val: u16) {
-        self.pc = val as usize;
+        self.pc = val;
     }
     pub fn jump_pc(&mut self, val: i8) {
         if val >= 0 {
-            self.pc += val as usize;
+            self.pc += val as u16;
         } else {
-            self.pc -= val.abs() as usize;
+            self.pc -= val.abs() as u16;
         }
     }
 }
