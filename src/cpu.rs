@@ -128,7 +128,7 @@ impl Cpu {
                 self.regs.a += 6;
             }
             // need to change the upper nybble
-            // we just remove 100 from the total
+            // we add 0x60 since the carry will reset it
             if self.regs.f.c_flag() || self.regs.a > 0x99 {
                 self.regs.a = self.regs.a.wrapping_add(0x60);
                 self.regs.f.set_c_flag(true);

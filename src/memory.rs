@@ -19,12 +19,22 @@ impl Memory {
     }
 
     pub fn write_u8(&mut self, address: u16, data: u8) {
-        self.memory[address as usize] = data;
+        let address = address as usize;
+        if address < 0x8000 {
+            panic!("cannot handle swapping yet");
+        }
+        self.memory[address] = data;
+        if address >= 0xC000 && address <= 0xDDFF {
+            self.memory[address+0x2000] = data;
+        } else if address >= 0xE000 && address <= 0xFDFF {
+            self.memory[address-0x2000] = data;
+        }
     }
+    // just for convenience
     pub fn write_u16(&mut self, address: u16, data: u16) {
-        let (store1, store2) = split_u16(data);
-        self.memory[address as usize] = store1;
-        self.memory[(address+1) as usize] = store2;
+        let (store2, store1) = split_u16(data);
+        self.write_u8(address, store1);
+        self.write_u8(address+1, store2);
     }
     pub fn read(&self, address: u16) -> u8 {
         self.memory[address as usize]
