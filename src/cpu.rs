@@ -25,8 +25,11 @@ impl Cpu {
     fn read_mem(&self, address: u16) -> u8 {
         self.memory.borrow().read(address)
     }
+    fn read_u16(&self, address: u16) -> u16 {
+        combine_u8s(self.read_mem(address), self.read_mem(address+1))
+    }
     fn write_mem(&self, address: u16, data: u8) {
-        self.memory.borrow_mut().write_u8(address, data);
+        self.memory.borrow_mut().write(address, data);
     }
     fn write_mem_u16(&mut self, address: Option<u16>, data: u16) {
         let address = match address {
@@ -60,28 +63,28 @@ impl Cpu {
     /// all the cpu opcodes which can be generalised to use any data
     /// most if not all are mathematical instructions and store result in acc
     fn add(&mut self, data: u8) {
-        self.regs.f.set_h_flag(half_carry_u8_add(self.regs.a, data));
+        self.regs.f.set_h_flag(half_carry_add(self.regs.a, data));
         self.regs.a = self.regs.a.wrapping_add(data);
         self.regs.f.set_z_flag(self.regs.a == 0);
         self.regs.f.set_n_flag(false);
         self.regs.f.set_c_flag(self.regs.a<data)    
     }
     fn adc(&mut self, data: u8) {
-        self.regs.f.set_h_flag(half_carry_u8_add(self.regs.a, data));
+        self.regs.f.set_h_flag(half_carry_add(self.regs.a, data));
         self.regs.a = self.regs.a.wrapping_add(data + self.regs.f.c_flag() as u8);
         self.regs.f.set_z_flag(self.regs.a == 0);
         self.regs.f.set_n_flag(false);
         self.regs.f.set_c_flag(self.regs.a<data);
     }
     fn sub(&mut self, data: u8) {
-        self.regs.f.set_h_flag(half_carry_u8_sub(self.regs.a, data));
+        self.regs.f.set_h_flag(half_carry_sub(self.regs.a, data));
         self.regs.f.set_c_flag(self.regs.a<data);
         self.regs.a = self.regs.a.wrapping_sub(data);
         self.regs.f.set_z_flag(self.regs.a==0);
         self.regs.f.set_n_flag(true); 
     }
     fn sbc(&mut self, data: u8) {
-        self.regs.f.set_h_flag(half_carry_u8_sub(self.regs.a, data));
+        self.regs.f.set_h_flag(half_carry_sub(self.regs.a, data));
         let comparison = self.regs.a;
         self.regs.a = self.regs.a.wrapping_sub(data + self.regs.f.c_flag() as u8);
         self.regs.f.set_z_flag(self.regs.a==0);
@@ -120,6 +123,17 @@ impl Cpu {
         self.regs.f.set_h_flag(half_carry_u16(r1, r2));
         self.regs.f.set_c_flag(sum<r1);
         sum
+    }
+    fn add_sp(&mut self, r2: i8) -> u16 {
+        let res = if r2 >= 0 {
+            self.regs.sp + (r2 as u16)
+        } else {
+            self.regs.sp - (r2.abs() as u16)
+        };
+        self.regs.f.set_n_flag(false);
+        self.regs.f.set_z_flag(false);
+
+        res
     }
     fn daa(&mut self) {
         if !self.regs.f.n_flag() {
@@ -188,88 +202,86 @@ impl Cpu {
         self.regs.set_pc(address);
     }
 
-    pub fn process_next(&mut self) {  
-        println!("{}", self.regs.pc);
-        
+    pub fn process_next(&mut self) {          
         let opcode = self.get_next();
         if opcode == 0xCB {
             self.process_prefixed();
             return;
         }
         match opcode {
-            0x00 => {},
-            0x01 => {let d=self.get_word(); self.regs.set_bc(d)}
-            0x02 => self.write_mem(self.regs.bc(), self.regs.a),
-            0x03 => self.regs.set_bc(self.regs.bc() + 1),
-            0x04 => inc(&mut self.regs.b, &mut self.regs.f),
-            0x05 => dec(&mut self.regs.b, &mut self.regs.f),
-            0x06 => self.regs.b = self.get_next(),
-            0x07 => rlc(&mut self.regs.a, &mut self.regs.f),
-            0x08 => self.write_mem_u16(None, self.regs.sp),
-            0x09 => {let r=self.add_u16(self.regs.hl(), self.regs.bc()); self.regs.set_hl(r)},
-            0x0A => self.regs.a = self.read_mem(self.regs.bc()),
-            0x0B => self.regs.set_bc(self.regs.bc() - 1),
-            0x0C => inc(&mut self.regs.c, &mut self.regs.f),
-            0x0D => dec(&mut self.regs.c, &mut self.regs.f),
-            0x0E => self.regs.c = self.get_next(),
-            0x0F => rrc(&mut self.regs.a, &mut self.regs.f),
-            0x10 => {self.stopped = true; self.get_next();},
-            0x11 => {let w = self.get_word(); self.regs.set_de(w)}
-            0x12 => self.write_mem(self.regs.de(), self.regs.a),
-            0x13 => self.regs.set_de(self.regs.de() + 1),
-            0x14 => inc(&mut self.regs.d, &mut self.regs.f),
-            0x15 => dec(&mut self.regs.d, &mut self.regs.f),
-            0x16 => self.regs.d = self.get_next(),
-            0x17 => rl(&mut self.regs.a, &mut self.regs.f),
-            0x18 => self.jr(true), // this fn is conditional but still
-            0x19 => {let r= self.add_u16(self.regs.hl(), self.regs.de()); self.regs.set_hl(r)},
-            0x1A => self.regs.a = self.read_mem(self.regs.de()),
-            0x1B => self.regs.set_de(self.regs.de() - 1),
-            0x1C => inc(&mut self.regs.e, &mut self.regs.f),
-            0x1D => dec(&mut self.regs.e, &mut self.regs.f),
-            0x1E => self.regs.e = self.get_next(),
-            0x1F => rr(&mut self.regs.a, &mut self.regs.f),
-            0x20 => self.jr(!self.regs.f.z_flag()),
-            0x21 => {let w = self.get_word(); self.regs.set_hl(w);}
-            0x22 => {let hl=self.regs.hli(); self.write_mem(hl, self.regs.a);}
-            0x23 => {let _ = self.regs.hli();},
-            0x24 => inc(&mut self.regs.h, &mut self.regs.f),
-            0x25 => dec(&mut self.regs.h, &mut self.regs.f),
-            0x26 => self.regs.h = self.get_next(),
-            0x27 => todo!(),
-            0x28 => self.jr(self.regs.f.z_flag()),
-            0x29 => {let r=self.add_u16(self.regs.hl(), self.regs.hl()); self.regs.set_hl(r)},
-            0x2A => {let hl = self.regs.hli(); self.regs.a = self.read_mem(hl)}
-            0x2B => self.regs.set_hl(self.regs.hl()-1),
-            0x2C => inc(&mut self.regs.l, &mut self.regs.f),
-            0x2D => dec(&mut self.regs.l, &mut self.regs.f),
-            0x2E => self.regs.l = self.get_next(),
-            0x2F => self.regs.a = !self.regs.a,
-            0x30 => self.jr(!self.regs.f.c_flag()),
-            0x31 => self.regs.sp = combine_u8s(self.get_next(), self.get_next()),
-            0x32 => {let hl = self.regs.hli(); self.write_mem(hl, self.regs.a)}
-            0x33 => self.regs.sp += 1,
+            0x00 => {}, // NOP
+            0x01 => {let w=self.get_word(); self.regs.set_bc(w)} // LD BC, n16
+            0x02 => self.write_mem(self.regs.bc(), self.regs.a), // LD (BC), A
+            0x03 => self.regs.set_bc(self.regs.bc() + 1), // INC BC
+            0x04 => inc(&mut self.regs.b, &mut self.regs.f), // INC B
+            0x05 => dec(&mut self.regs.b, &mut self.regs.f), // DEC B
+            0x06 => self.regs.b = self.get_next(), // LD B, n8
+            0x07 => rlc(&mut self.regs.a, &mut self.regs.f), // RLCA
+            0x08 => self.write_mem_u16(None, self.regs.sp), // LD (a16), SP
+            0x09 => {let r=self.add_u16(self.regs.hl(), self.regs.bc()); self.regs.set_hl(r)}, // ADD HL, BC
+            0x0A => self.regs.a = self.read_mem(self.regs.bc()), // LD A, (BC)
+            0x0B => self.regs.set_bc(self.regs.bc() - 1), // DEC BC
+            0x0C => inc(&mut self.regs.c, &mut self.regs.f), // INC C
+            0x0D => dec(&mut self.regs.c, &mut self.regs.f), // DEC C
+            0x0E => self.regs.c = self.get_next(), // LD C, n8
+            0x0F => rrc(&mut self.regs.a, &mut self.regs.f), // RRCA
+            0x10 => {self.stopped = true; self.get_next();}, // STOP 0
+            0x11 => {let w = self.get_word(); self.regs.set_de(w)} // LD DE, n16
+            0x12 => self.write_mem(self.regs.de(), self.regs.a), // LD (DE), A
+            0x13 => self.regs.set_de(self.regs.de() + 1), // INC DE
+            0x14 => inc(&mut self.regs.d, &mut self.regs.f), // INC D
+            0x15 => dec(&mut self.regs.d, &mut self.regs.f), // DEC D
+            0x16 => self.regs.d = self.get_next(), // LD D, n8
+            0x17 => rl(&mut self.regs.a, &mut self.regs.f), // RLA
+            0x18 => self.jr(true), // JR i8
+            0x19 => {let r= self.add_u16(self.regs.hl(), self.regs.de()); self.regs.set_hl(r)}, // ADD HL, DE
+            0x1A => self.regs.a = self.read_mem(self.regs.de()), // LD A, (DE)
+            0x1B => self.regs.set_de(self.regs.de() - 1), // DEC DE
+            0x1C => inc(&mut self.regs.e, &mut self.regs.f), // INC E
+            0x1D => dec(&mut self.regs.e, &mut self.regs.f), // DEC E
+            0x1E => self.regs.e = self.get_next(), // LD E n8
+            0x1F => rr(&mut self.regs.a, &mut self.regs.f), // RRA
+            0x20 => self.jr(!self.regs.f.z_flag()), // JR NZ, i8
+            0x21 => {let w = self.get_word(); self.regs.set_hl(w);} //LD HL, n16
+            0x22 => {let hl=self.regs.hli(); self.write_mem(hl, self.regs.a);} // LD (HL+), A
+            0x23 => {self.regs.hli();}, // INC HL
+            0x24 => inc(&mut self.regs.h, &mut self.regs.f), // INC H
+            0x25 => dec(&mut self.regs.h, &mut self.regs.f), // DEC H
+            0x26 => self.regs.h = self.get_next(), // LD H, n8
+            0x27 => self.daa(), // DAA
+            0x28 => self.jr(self.regs.f.z_flag()), // JR Z, i8
+            0x29 => {let r=self.add_u16(self.regs.hl(), self.regs.hl()); self.regs.set_hl(r)}, // ADD HL, HL
+            0x2A => {let hl = self.regs.hli(); self.regs.a = self.read_mem(hl)}, // LD A, (HL+)
+            0x2B => self.regs.set_hl(self.regs.hl()-1), // DEC HL
+            0x2C => inc(&mut self.regs.l, &mut self.regs.f), // INC L
+            0x2D => dec(&mut self.regs.l, &mut self.regs.f), // DEC L
+            0x2E => self.regs.l = self.get_next(), // LD L, n8
+            0x2F => self.regs.a = !self.regs.a, // CPL
+            0x30 => self.jr(!self.regs.f.c_flag()), // JR NC, i8
+            0x31 => self.regs.sp = combine_u8s(self.get_next(), self.get_next()), // LD SP, n16
+            0x32 => {let hl = self.regs.hli(); self.write_mem(hl, self.regs.a)} // LD (HL-), A
+            0x33 => self.regs.sp += 1, // INC SP
             0x34 => {
                 let mut data = self.read_mem(self.regs.hl());
                 inc(&mut data, &mut self.regs.f);
                 self.write_mem(self.regs.hl(), data);
-            }
+            } // INC (HL)
             0x35 => {
                 let mut data = self.read_mem(self.regs.hl());
                 dec(&mut data, &mut self.regs.f);
                 self.write_mem(self.regs.hl(), data);
-            }
-            0x36 => {let o = self.get_next(); self.write_mem(self.regs.hl(), o);}
-            0x37 => todo!(),
-            0x38 => self.jr(self.regs.f.c_flag()),
-            0x39 => {let r= self.add_u16(self.regs.hl(), self.regs.sp); self.regs.set_hl(r)},
-            0x3A => {let hl = self.regs.hld(); self.regs.a = self.read_mem(hl)}
-            0x3B => self.regs.sp -= 1,
-            0x3C => inc(&mut self.regs.a, &mut self.regs.f),
-            0x3D => dec(&mut self.regs.a, &mut self.regs.f),
-            0x3E => self.regs.a = self.get_next(),
-            0x3F => self.regs.f.set_c_flag(!self.regs.f.c_flag()),
-            0x76 => self.daa(),
+            } // DEC (HL)
+            0x36 => {let o = self.get_next(); self.write_mem(self.regs.hl(), o)} // LD (HL), n8
+            0x37 => self.regs.f.set_c_flag(true), // SCF
+            0x38 => self.jr(self.regs.f.c_flag()), // JR C, i8
+            0x39 => {let r= self.add_u16(self.regs.hl(), self.regs.sp); self.regs.set_hl(r)}, // ADD HL, SP
+            0x3A => {let hl = self.regs.hld(); self.regs.a = self.read_mem(hl)} // LD A, (HL-)
+            0x3B => self.regs.sp -= 1, // DEC SP
+            0x3C => inc(&mut self.regs.a, &mut self.regs.f), // INC A
+            0x3D => dec(&mut self.regs.a, &mut self.regs.f), // DEC A
+            0x3E => self.regs.a = self.get_next(), // LD A, n8
+            0x3F => self.regs.f.set_c_flag(!self.regs.f.c_flag()), // CCF
+            0x76 => self.stopped = true, // HALT
             0x40..=0x7F => {
                 // the LD assignments are all just repeatable
                 let src = match opcode % 8 {
@@ -294,7 +306,7 @@ impl Cpu {
                     7 => self.regs.a = src,
                     _ => panic!("invalid opcode"),
                 };
-            }
+            } // LD *, *
             0x80..=0xBF => {
                 // all the maths instructions, alot of repeat
                 let param = match opcode % 8 {
@@ -319,59 +331,59 @@ impl Cpu {
                     7 => self.cp(param),
                     _ => panic!("fucky maths")
                 }
-            }
-            0xC0 => self.ret(!self.regs.f.z_flag()),
-            0xC1 => {let p = self.pop(); self.regs.set_bc(p)},
-            0xC2 => self.jp(!self.regs.f.z_flag(), None),
-            0xC3 => self.jp(true, None),
-            0xC4 => self.call(!self.regs.f.z_flag(), None),
-            0xC5 => self.push(self.regs.bc()),
-            0xC6 => {let o = self.get_next(); self.add(o);}
-            0xC7 => self.call(true, Some(0x00)),
-            0xC8 => self.ret(self.regs.f.z_flag()),
-            0xC9 => self.ret(true),
-            0xCA => self.jp(self.regs.f.z_flag(), None),
-            0xCC => self.call(self.regs.f.z_flag(), None),
-            0xCD => self.call(true, None),
-            0xCE => {let o = self.get_next(); self.add(o)}
-            0xCF => self.call(true, Some(0x08)),
-            0xD0 => self.ret(!self.regs.f.c_flag()),
-            0xD1 => {let p = self.pop(); self.regs.set_bc(p);}
-            0xD2 => self.jp(!self.regs.f.c_flag(), None),
-            0xD4 => self.call(!self.regs.f.c_flag(), None),
-            0xD5 => self.push(self.regs.de()),
-            0xD6 => {let o = self.get_next(); self.sub(o);}
-            0xD7 => self.call(true, Some(0x10)),
-            0xD8 => self.ret(self.regs.f.c_flag()),
-            0xD9 => {self.ret(true); self.ime = true;},
-            0xDA => self.jp(self.regs.f.c_flag(), None),
-            0xDC => self.call(self.regs.f.c_flag(), None),
-            0xDE => {let o = self.get_next(); self.sbc(o);}
-            0xDF => self.call(true, Some(0x18)),
-            0xE0 => {let a = combine_u8s(self.get_next(), 0xFF); self.write_mem(a, self.regs.a)}
-            0xE1 => {let o = self.pop(); self.regs.set_hl(o)}
-            0xE2 => {let a = combine_u8s(self.regs.c, 0xFF); self.write_mem(a, self.regs.a)}
-            0xE5 => self.push(self.regs.hl()),
-            0xE6 => {let o = self.get_next(); self.and(o)}
-            0xE7 => self.call(true, Some(0x20)),
-            0xE8 => todo!(),
-            0xE9 => self.jp(true, Some(self.regs.hl())),
-            0xEA => {let w = self.get_word(); self.write_mem(w, self.regs.a)}
-            0xEE => {let o = self.get_next(); self.xor(o)}
-            0xEF => self.call(true, Some(0x28)),
-            0xF0 => self.regs.a = self.read_mem(combine_u8s(self.regs.a, 0xFF)),
-            0xF1 => {let p = self.pop(); self.regs.set_af(p)}
-            0xF2 => self.regs.c = self.read_mem(combine_u8s(self.regs.a, 0xFF)),
-            0xF3 => self.ime = false,
-            0xF5 => self.push(self.regs.af()),
-            0xF6 => {let o = self.get_next(); self.or(o)}
-            0xF7 => self.call(true, Some(0x30)),
-            0xF8 => todo!(),
-            0xF9 => self.regs.sp = self.regs.hl(),
-            0xFA => {let w = self.get_word(); self.regs.a = self.read_mem(w)}
-            0xFB => self.ime = true,
-            0xFE => {let o = self.get_next(); self.cp(o)}
-            0xFF => self.call(true, Some(0x38)),
+            } // * A, *
+            0xC0 => self.ret(!self.regs.f.z_flag()), // RET NZ
+            0xC1 => {let p = self.pop(); self.regs.set_bc(p)}, // POP BC
+            0xC2 => self.jp(!self.regs.f.z_flag(), None), // JP NZ, n16
+            0xC3 => self.jp(true, None), // JP n16
+            0xC4 => self.call(!self.regs.f.z_flag(), None), // CALL NZ n16
+            0xC5 => self.push(self.regs.bc()), // PUSH BC
+            0xC6 => {let o = self.get_next(); self.add(o)} // ADD A, n8
+            0xC7 => self.call(true, Some(0x00)), // RST 00
+            0xC8 => self.ret(self.regs.f.z_flag()), // RET Z
+            0xC9 => self.ret(true), // RET
+            0xCA => self.jp(self.regs.f.z_flag(), None), // JP Z, n16
+            0xCC => self.call(self.regs.f.z_flag(), None), // CALL Z, n16
+            0xCD => self.call(true, None), // CALL n16
+            0xCE => {let o = self.get_next(); self.adc(o)} // ADC A, n8
+            0xCF => self.call(true, Some(0x08)), // RST 08
+            0xD0 => self.ret(!self.regs.f.c_flag()), // RET NC
+            0xD1 => {let p = self.pop(); self.regs.set_de(p)} // POP DE 
+            0xD2 => self.jp(!self.regs.f.c_flag(), None), // JP NC, n16
+            0xD4 => self.call(!self.regs.f.c_flag(), None), // CALL NC, n16
+            0xD5 => self.push(self.regs.de()), // PUSH DE
+            0xD6 => {let o = self.get_next(); self.sub(o)} // SUB n8
+            0xD7 => self.call(true, Some(0x10)), // CALL 10
+            0xD8 => self.ret(self.regs.f.c_flag()), // RET C
+            0xD9 => {self.ret(true); self.ime = true;}, // RETI
+            0xDA => self.jp(self.regs.f.c_flag(), None), // JP C, n16
+            0xDC => self.call(self.regs.f.c_flag(), None), // CALL C, n16
+            0xDE => {let o = self.get_next(); self.sbc(o)} // SBC A, n8
+            0xDF => self.call(true, Some(0x18)), // RST 18
+            0xE0 => {let a = combine_u8s(self.get_next(), 0xFF); self.write_mem(a, self.regs.a)} // LDH (a8), A
+            0xE1 => {let o = self.pop(); self.regs.set_hl(o)} // POP HL
+            0xE2 => {let a = combine_u8s(self.regs.c, 0xFF); self.write_mem(a, self.regs.a)} // LD (C), A
+            0xE5 => self.push(self.regs.hl()), // PUSH HL
+            0xE6 => {let o = self.get_next(); self.and(o)} // AND A, n8
+            0xE7 => self.call(true, Some(0x20)), // RST 20
+            0xE8 => {let o = self.get_next(); self.regs.sp = self.add_sp(o as i8)}, // ADD SP, n8
+            0xE9 => self.jp(true, Some(self.read_u16(self.regs.hl()))), // JP (HL)
+            0xEA => {let w = self.get_word(); self.write_mem(w, self.regs.a)} // LD (n16), A
+            0xEE => {let o = self.get_next(); self.xor(o)} // XOR A, n8
+            0xEF => self.call(true, Some(0x28)), // RST 28
+            0xF0 => self.regs.a = self.read_mem(combine_u8s(self.regs.a, 0xFF)), // LDH A, (n8)
+            0xF1 => {let p = self.pop(); self.regs.set_af(p)} // POP AF
+            0xF2 => self.regs.a = self.read_mem(combine_u8s(self.regs.c, 0xFF)), // LD A, (C)
+            0xF3 => self.ime = false, // DI
+            0xF5 => self.push(self.regs.af()), // PUSH AF
+            0xF6 => {let o = self.get_next(); self.or(o)} // OR A, n8
+            0xF7 => self.call(true, Some(0x30)), // RST 30
+            0xF8 => {let o = self.get_next(); let sp = self.add_sp(o as i8); self.regs.set_hl(sp)}, // LD HL, SP+n8
+            0xF9 => self.regs.sp = self.regs.hl(), // LD SP, HL
+            0xFA => {let w = self.get_word(); self.regs.a = self.read_mem(w)} // LD A, (a16)
+            0xFB => self.ime = true, // EI
+            0xFE => {let o = self.get_next(); self.cp(o)} // CP n8
+            0xFF => self.call(true, Some(0x38)), // RST 38
             _ => panic!("unsupported opcode provided! you fucker"),
         }
     }

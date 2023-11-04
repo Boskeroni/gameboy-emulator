@@ -76,34 +76,23 @@ impl Registers {
             h: 0,
             l: 0,
             sp: 0xFFFE,
-            pc: 0x100,
+            pc: 0,
         }
     }
     // 16 bit register collectors
-    pub fn set_bc(&mut self, data: u16) {
-        (self.b, self.c) = split_u16(data);
-    }
-    pub fn set_de(&mut self, data: u16) {
-        (self.d, self.e) = split_u16(data);
-    }
-    pub fn set_hl(&mut self, data: u16) {
-        (self.h, self.l) = split_u16(data);
-    }
+    pub fn set_bc(&mut self, data: u16) { (self.b, self.c) = split_u16(data) }
+    pub fn set_de(&mut self, data: u16) { (self.d, self.e) = split_u16(data) }
+    pub fn set_hl(&mut self, data: u16) { (self.h, self.l) = split_u16(data) }
     pub fn set_af(&mut self, data: u16) {
         let (a, f) = split_u16(data);
         self.a = a;
         self.f = Flags::from_u8(f);
     }
 
-    pub fn bc(&self) -> u16 {
-        combine_u8s(self.c, self.b)
-    }
-    pub fn de(&self) -> u16 {
-        combine_u8s(self.e, self.d)
-    }
-    pub fn hl(&self) -> u16 {
-        combine_u8s(self.l, self.h)
-    }
+    pub fn bc(&self) -> u16 { combine_u8s(self.c, self.b) }
+    pub fn de(&self) -> u16 { combine_u8s(self.e, self.d) }
+    pub fn hl(&self) -> u16 { combine_u8s(self.l, self.h) }
+
     pub fn hli(&mut self) -> u16 {
         self.set_hl(self.hl()+1);
         self.hl()-1

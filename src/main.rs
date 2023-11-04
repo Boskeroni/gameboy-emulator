@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 mod cpu;
 mod memory;
 mod registers;
@@ -14,6 +16,8 @@ use memory::Memory;
 pub fn combine_u8s(a: u8, b: u8) -> u16 {
     ((b as u16) << 8) + a as u16
 }
+/// the upper byte is returned first. the lower byte is
+/// returned secondly.
 pub fn split_u16(a: u16) -> (u8, u8) {
     ((a >> 8) as u8, (a & 0xFF) as u8)
 }
@@ -42,7 +46,7 @@ fn main() {
         if memory.borrow().read(0xFF02) == 0x81 {
             let c = memory.borrow().read(0xFF01) as char;
             print!("{c}");
-            memory.borrow_mut().write_u8(0xFF02, 0);
+            memory.borrow_mut().write(0xFF02, 0);
         }
     }
 }

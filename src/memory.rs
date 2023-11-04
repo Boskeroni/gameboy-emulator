@@ -1,5 +1,18 @@
 use crate::split_u16;
 
+pub enum Registers {
+    LY,
+    LYC,
+    STAT,
+    LCDC,
+    SCY,
+    SCX,
+    WY,
+    WX,
+    BGP,
+    
+}
+
 pub struct Memory {
     pub memory: Vec<u8>,
 }
@@ -18,23 +31,24 @@ impl Memory {
         Self { memory }
     }
 
-    pub fn write_u8(&mut self, address: u16, data: u8) {
+    pub fn write(&mut self, address: u16, data: u8) {
         let address = address as usize;
         if address < 0x8000 {
             panic!("cannot handle swapping yet");
         }
         self.memory[address] = data;
-        if address >= 0xC000 && address <= 0xDDFF {
+        if address >= 0xC000 && address <= 0xDE00 {
             self.memory[address+0x2000] = data;
-        } else if address >= 0xE000 && address <= 0xFDFF {
+        } else if address >= 0xE000 && address <= 0xFE00 {
             self.memory[address-0x2000] = data;
         }
     }
     // just for convenience
     pub fn write_u16(&mut self, address: u16, data: u16) {
-        let (store2, store1) = split_u16(data);
-        self.write_u8(address, store1);
-        self.write_u8(address+1, store2);
+        let (upper, lower) = split_u16(data);
+        // little-endian encoding
+        self.write(address, lower);
+        self.write(address+1, upper);
     }
     pub fn read(&self, address: u16) -> u8 {
         self.memory[address as usize]
@@ -42,7 +56,7 @@ impl Memory {
     /// loading calls for the ppu
     /// returns a u128 as it is more memory efficient
     pub fn read_tile(&self, index: u8) -> u128 {
-        // using $8000 addressing, idk why the other one exists
+        // using 0x8000 addressing, idk why the other one exists
         let addressing = 0x8000 + (index * 16) as usize;
         let mut tile_data: u128 = 0;
         for i in 0..8 {

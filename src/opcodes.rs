@@ -1,30 +1,30 @@
 use crate::registers::Flags;
 
 //https://robdor.com/2016/08/10/gameboy-emulator-half-carry-flag/ goddamn is that smart
-pub fn half_carry_u8_add(a: u8, b: u8) -> bool {
+pub fn half_carry_add(a: u8, b: u8) -> bool {
     (((a & 0xf) + (b & 0xf)) & 0x10) == 0x10
 }
-pub fn half_carry_u8_sub(a: u8, b: u8) -> bool {
-    (((a & 0xf).wrapping_sub(b & 0xf)) & 0x10) == 0x10
+pub fn half_carry_sub(a: u8, b: u8) -> bool {
+    (a & 0xf).wrapping_sub(b & 0xf) & 0x10 == 0x10
 }
 /// values 0x7FF and 0x800 were calculated with same method from previous
 pub fn half_carry_u16(a: u16, b: u16) -> bool {
-    (((a & 0x7FF) + (b & 0x7FF)) & 0x800) == 0x800
+    (((a & 0xFFF) + (b & 0xFFF)) & 0x1000) == 0x1000
 }
 
 /// these opcodes only modify the data provided and flags so 
 /// no point in having them be stored in the struct / also avoids 
 /// mutable borrowing errors
 pub fn inc(data: &mut u8, flags: &mut Flags) {
-    let half_carried = half_carry_u8_add(*data, 1); 
+    let half_carried = half_carry_add(*data, 1); 
     flags.set_h_flag(half_carried);
     *data = data.wrapping_add(1);
     flags.set_z_flag(*data == 0);
     flags.set_n_flag(false);
 }
 pub fn dec(data: &mut u8, flags: &mut Flags) {
-    flags.set_h_flag(half_carry_u8_sub(*data, 1));
-    *data -= 1;
+    flags.set_h_flag(half_carry_sub(*data, 1));
+    *data = data.wrapping_sub(1);
     flags.set_z_flag(*data == 0);
     flags.set_n_flag(true);
 }
