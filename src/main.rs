@@ -39,8 +39,10 @@ fn main() {
     let memory = Rc::new(RefCell::new(Memory::new(rom)));
 
     let mut cpu = Cpu::new(memory.clone());
+    let mut cycles = 0;
     loop {
-        cpu.process_next();
+        cycles += cpu.process_next();
+        println!("{cycles}");
         // used for outputs during blarggs tests and since thatll be
         // all the gameboy roms ill be running for a while no point
         // in it being a seperate function. itll be easily deletable later

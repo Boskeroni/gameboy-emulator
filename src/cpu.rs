@@ -11,6 +11,7 @@ pub struct Cpu {
     scheduled_ime: bool,
     ime: bool,
     used: Vec<u8>,
+    cycles: u8,
 }
 
 impl Cpu {
@@ -22,15 +23,18 @@ impl Cpu {
             scheduled_ime: false,
             ime: false,
             used: Vec::new(),
+            cycles: 0,
         }
     }
-    fn read(&self, address: u16) -> u8 {
+    fn read(&mut self, address: u16) -> u8 {
+        self.cycles += 4;
         self.memory.borrow().read(address)
     }
-    fn read_u16(&self, address: u16) -> u16 {
+    fn read_u16(&mut self, address: u16) -> u16 {
         combine_u8s(self.read(address), self.read(address+1))
     }
-    fn write(&self, address: u16, data: u8) {
+    fn write(&mut self, address: u16, data: u8) {
+        self.cycles += 4;
         self.memory.borrow_mut().write(address, data);
     }
     fn write_u16(&mut self, address: Option<u16>, data: u16) {
@@ -48,6 +52,7 @@ impl Cpu {
     /// 
     /// calling `self.regs.pc()` implicitly increments it
     fn next_byte(&mut self) -> u8 {
+        self.cycles += 4;
         self.memory.borrow().read(self.regs.pc())
     }
     fn next_word(&mut self) -> u16 {
@@ -218,7 +223,8 @@ impl Cpu {
         }
     }
 
-    pub fn process_next(&mut self) {
+    pub fn process_next(&mut self) -> u8 {
+        self.cycles = 0;
         let opcode = self.next_byte();
         if !self.used.contains(&opcode) {
             self.used.push(opcode);
@@ -229,7 +235,7 @@ impl Cpu {
             if self.scheduled_ime != self.ime {
                 self.ime = self.scheduled_ime
             }
-            return;
+            return self.cycles;
         }
         match opcode {
             0x00 => {}, // NOP
@@ -378,7 +384,7 @@ impl Cpu {
             0xD6 => {let o = self.next_byte(); self.sub(o)} // SUB n8
             0xD7 => self.call(true, Some(0x10)), // CALL 10
             0xD8 => self.ret(self.regs.f.c_flag()), // RET C
-            0xD9 => {self.ret(true); self.scheduled_ime = true; return;}, // RETI
+            0xD9 => {self.ret(true); self.scheduled_ime = true; return self.cycles;}, // RETI
             0xDA => self.jp(self.regs.f.c_flag(), None), // JP C, nn
             0xDC => self.call(self.regs.f.c_flag(), None), // CALL C, nn
             0xDE => {let o = self.next_byte(); self.sbc(o)} // SBC A, n
@@ -397,14 +403,14 @@ impl Cpu {
             0xF0 => {let a = combine_u8s(self.next_byte(), 0xFF); self.regs.a = self.read(a)}, // LDH A, (n8)
             0xF1 => {let p = self.pop(); self.regs.set_af(p)} // POP AF
             0xF2 => self.regs.a = self.read(combine_u8s(self.regs.c, 0xFF)), // LD A, (C)
-            0xF3 => {self.scheduled_ime = false; return;}, // DI
+            0xF3 => {self.scheduled_ime = false; return self.cycles;}, // DI
             0xF5 => self.push(self.regs.af()), // PUSH AF
             0xF6 => {let o = self.next_byte(); self.or(o)} // OR A, n
             0xF7 => self.call(true, Some(0x30)), // RST 30
             0xF8 => {let o = self.next_byte(); let sp = self.add_sp(o as i8); self.regs.set_hl(sp)}, // LD HL, SP+e
             0xF9 => self.regs.sp = self.regs.hl(), // LD SP, HL
             0xFA => {let w = self.next_word(); self.regs.a = self.read(w)} // LD A, (n)
-            0xFB => {self.scheduled_ime = true; return;}, // EI
+            0xFB => {self.scheduled_ime = true; return self.cycles;}, // EI
             0xFE => {let o = self.next_byte(); self.cp(o)} // CP n8
             0xFF => self.call(true, Some(0x38)), // RST 38
             _ => panic!("unsupported opcode provided"),
@@ -412,6 +418,7 @@ impl Cpu {
         if self.scheduled_ime != self.ime {
             self.ime = self.scheduled_ime;
         }
+        return self.cycles;
     }
 
     fn process_prefixed(&mut self) {
