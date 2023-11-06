@@ -1,3 +1,5 @@
+use std::ops::AddAssign;
+
 use crate::{split_u16, combine_u8s};
 
 ///  Flag Register
@@ -113,10 +115,6 @@ impl Registers {
         self.pc = val;
     }
     pub fn jump_pc(&mut self, val: i8) {
-        if val >= 0 {
-            self.pc += val as u16;
-        } else {
-            self.pc -= val.abs() as u16;
-        }
+        self.pc = self.pc.wrapping_add_signed(val as i16);
     }
 }

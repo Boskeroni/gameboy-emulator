@@ -10,11 +10,12 @@ use std::{env, cell::RefCell, rc::Rc};
 use cpu::Cpu;
 use memory::Memory;
 
-/// little endian reading
-/// the second parameter is the upper byte of the u16
-/// the first parameter is the lower byte of the u16
-pub fn combine_u8s(a: u8, b: u8) -> u16 {
-    ((b as u16) << 8) + a as u16
+/// little endian reading;
+/// 
+/// the first number parsed will be the lower byte and the 
+/// second will be the upper byte.
+pub fn combine_u8s(lsb: u8, msb: u8) -> u16 {
+    ((msb as u16) << 8) + lsb as u16
 }
 /// the upper byte is returned first. the lower byte is
 /// returned secondly.

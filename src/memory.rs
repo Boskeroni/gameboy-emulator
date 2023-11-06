@@ -1,18 +1,3 @@
-use crate::split_u16;
-
-pub enum Registers {
-    LY,
-    LYC,
-    STAT,
-    LCDC,
-    SCY,
-    SCX,
-    WY,
-    WX,
-    BGP,
-    
-}
-
 pub struct Memory {
     pub memory: Vec<u8>,
 }
@@ -42,13 +27,6 @@ impl Memory {
         } else if address >= 0xE000 && address <= 0xFE00 {
             self.memory[address-0x2000] = data;
         }
-    }
-    // just for convenience
-    pub fn write_u16(&mut self, address: u16, data: u16) {
-        let (upper, lower) = split_u16(data);
-        // little-endian encoding
-        self.write(address, lower);
-        self.write(address+1, upper);
     }
     pub fn read(&self, address: u16) -> u8 {
         self.memory[address as usize]
