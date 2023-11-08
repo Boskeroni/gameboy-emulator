@@ -145,6 +145,7 @@ impl Cpu {
         self.regs.f.set_n_flag(true);
         self.regs.f.set_h_flag(true);
     }
+    
     /// these opcodes are all miscellanious and cover either
     /// one or two opcodes which require special functionality
     fn add_u16(&mut self, r1: u16, r2: u16) -> u16 {
@@ -155,7 +156,6 @@ impl Cpu {
         result
     }
     fn add_sp(&mut self, r2: i8) -> u16 {
-        println!("this");
         let res = self.regs.sp.wrapping_add_signed(r2 as i16);
         // if it was an addition
         if r2 >= 0 {
@@ -194,6 +194,7 @@ impl Cpu {
         self.regs.f.set_n_flag(false);
         self.regs.f.set_h_flag(false);
     }
+    
     /// logic flow opcodes
     /// handle the returns, jumps and calls in the assembly
     fn jr(&mut self, cc: bool) {
@@ -238,8 +239,11 @@ impl Cpu {
     pub fn process_next(&mut self) -> u8 {
         // reset the number of cycles for this instruction
         self.cycles = 0;
+
+        // check for possible interupts
         let possible_interrupts = self.read(0xFF0F) & self.read(0xFFFF);
         if possible_interrupts != 0 && self.ime {
+            // due to priority, we want to handle the interrupt furthest to the right.
             let interrupt = possible_interrupts.trailing_zeros();
             match interrupt {
                 0 => self.call(true, Some(0x40)),
@@ -250,10 +254,13 @@ impl Cpu {
                 // this could technically happen but wtf is the programmer smoking
                 _ => println!("fucky interrupt") 
             }
+            // its up to the programmer to restart the ime
+            // the gameboy unsets it immediately.
             self.ime = false;
+            self.scheduled_ime = false;
 
             // interrupt handling always takes 5 M-cycles so we can just return the value
-            return 20; // 20 T-cycles per 5 M-cycles
+            return 20; // 20 T-cycles === 5 M-cycles
         } 
         let opcode = self.next_byte();
         if opcode == 0xCB {
