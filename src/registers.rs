@@ -1,5 +1,3 @@
-use std::ops::AddAssign;
-
 use crate::{split_u16, combine_u8s};
 
 ///  Flag Register

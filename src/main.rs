@@ -9,6 +9,7 @@ mod opcodes;
 use std::{env, cell::RefCell, rc::Rc};
 use cpu::Cpu;
 use memory::Memory;
+use ppu::Ppu;
 
 /// little endian reading;
 /// 
@@ -22,6 +23,8 @@ pub fn combine_u8s(lsb: u8, msb: u8) -> u16 {
 pub fn split_u16(a: u16) -> (u8, u8) {
     ((a >> 8) as u8, (a & 0xFF) as u8)
 }
+///https://www.reddit.com/r/EmuDev/comments/4o2t6k/how_do_you_emulate_specific_cpu_speeds/
+const MAXCYCLES: usize = 69905;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -36,13 +39,18 @@ fn main() {
         Ok(f) => f,
     };
     
+    // all the pillars of a gameboy emulator
     let memory = Rc::new(RefCell::new(Memory::new(rom)));
-
     let mut cpu = Cpu::new(memory.clone());
-    let mut cycles = 0;
+    let mut _ppu = Ppu::new(memory.clone());
+
+    let mut cycles: usize = 0;
     loop {
-        cycles += cpu.process_next();
-        println!("{cycles}");
+        cycles += cpu.process_next() as usize;
+        if cycles >= MAXCYCLES {
+            //ppu.render();
+            cycles = 0;
+        }
         // used for outputs during blarggs tests and since thatll be
         // all the gameboy roms ill be running for a while no point
         // in it being a seperate function. itll be easily deletable later

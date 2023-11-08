@@ -5,7 +5,7 @@ use crate::opcodes::*;
 use crate::registers::*;
 
 pub struct Cpu {
-    regs: Registers,
+    pub regs: Registers,
     memory: Rc<RefCell<Memory>>,
     stopped: bool,
     scheduled_ime: bool,
@@ -26,7 +26,11 @@ impl Cpu {
             cycles: 0,
         }
     }
+    /// the read and write commands can read/write u8s to memory.
+    /// the `read_u16` and `write_u16` simply make it more convenient
+    /// and just end up calling the `read` and `write` commands
     fn read(&mut self, address: u16) -> u8 {
+        // accessing memory takes time
         self.cycles += 4;
         self.memory.borrow().read(address)
     }
@@ -34,6 +38,7 @@ impl Cpu {
         combine_u8s(self.read(address), self.read(address+1))
     }
     fn write(&mut self, address: u16, data: u8) {
+        // reading memory takes time
         self.cycles += 4;
         self.memory.borrow_mut().write(address, data);
     }
@@ -52,13 +57,15 @@ impl Cpu {
     /// 
     /// calling `self.regs.pc()` implicitly increments it
     fn next_byte(&mut self) -> u8 {
-        self.cycles += 4;
+        // the cycle updates are handled in the read function
         self.memory.borrow().read(self.regs.pc())
     }
     fn next_word(&mut self) -> u16 {
         combine_u8s(self.next_byte(), self.next_byte())
     }
 
+    /// these functions handle the stack pointer and the 
+    /// memory that is assigned to it. 
     fn pop(&mut self) -> u16 {
         let lower = self.read(self.regs.sp);
         let higher = self.read(self.regs.sp+1);
@@ -133,6 +140,13 @@ impl Cpu {
         self.sub(data);
         self.regs.a = temp;
     }
+    fn cpl(&mut self) {
+        self.regs.a = !self.regs.a;
+        self.regs.f.set_n_flag(true);
+        self.regs.f.set_h_flag(true);
+    }
+    /// these opcodes are all miscellanious and cover either
+    /// one or two opcodes which require special functionality
     fn add_u16(&mut self, r1: u16, r2: u16) -> u16 {
         let (result, carried) = r1.overflowing_add(r2);
         self.regs.f.set_n_flag(false);
@@ -180,19 +194,15 @@ impl Cpu {
         self.regs.f.set_n_flag(false);
         self.regs.f.set_h_flag(false);
     }
-    fn cpl(&mut self) {
-        self.regs.a = !self.regs.a;
-        self.regs.f.set_n_flag(true);
-        self.regs.f.set_h_flag(true);
-    }
     /// logic flow opcodes
     /// handle the returns, jumps and calls in the assembly
     fn jr(&mut self, cc: bool) {
         // still have to load it so we update pc even if no jump
         let jump = self.next_byte() as i8;
-        if cc {
-            self.regs.jump_pc(jump);
+        if !cc {
+            return;
         }
+        self.regs.jump_pc(jump);
     }
     fn ret(&mut self, cc: bool) {
         if !cc {
@@ -207,29 +217,45 @@ impl Cpu {
             None => self.next_word()
         };
         if !cc {
-            // updating the stack pointer accordingly
-            let next = self.regs.pc(); // instruction that we will jump back to on a return
-            self.push(next);
-            self.regs.set_pc(address);
+            return;
         }
+        // updating the stack pointer accordingly
+        let next = self.regs.pc(); // instruction that we will jump back to on a return
+        self.push(next);
+        self.regs.set_pc(address);
     }
     fn jp(&mut self, cc: bool, address: Option<u16>) {
         let address = match address {
             Some(a) => a,
             None => self.next_word(),
         };
-        if cc {
-            self.regs.set_pc(address);
+        if !cc {
+            return;   
         }
+        self.regs.set_pc(address);
     }
 
     pub fn process_next(&mut self) -> u8 {
+        // reset the number of cycles for this instruction
         self.cycles = 0;
+        let possible_interrupts = self.read(0xFF0F) & self.read(0xFFFF);
+        if possible_interrupts != 0 && self.ime {
+            let interrupt = possible_interrupts.trailing_zeros();
+            match interrupt {
+                0 => self.call(true, Some(0x40)),
+                1 => self.call(true, Some(0x48)),
+                2 => self.call(true, Some(0x50)),
+                3 => self.call(true, Some(0x58)),
+                4 => self.call(true, Some(0x60)),
+                // this could technically happen but wtf is the programmer smoking
+                _ => println!("fucky interrupt") 
+            }
+            self.ime = false;
+
+            // interrupt handling always takes 5 M-cycles so we can just return the value
+            return 20; // 20 T-cycles per 5 M-cycles
+        } 
         let opcode = self.next_byte();
-        if !self.used.contains(&opcode) {
-            self.used.push(opcode);
-            println!("{:02X?}", self.used);
-        }
         if opcode == 0xCB {
             self.process_prefixed();
             if self.scheduled_ime != self.ime {
@@ -237,6 +263,16 @@ impl Cpu {
             }
             return self.cycles;
         }
+        if let Some(_) = self.process_unprefixed(opcode) {
+            return self.cycles;
+        }
+        if self.scheduled_ime != self.ime {
+            self.ime = self.scheduled_ime;
+        }
+        return self.cycles;
+    }
+
+    fn process_unprefixed(&mut self, opcode: u8) -> Option<u8> {
         match opcode {
             0x00 => {}, // NOP
             0x01 => {let w=self.next_word(); self.regs.set_bc(w)} // LD BC, nn
@@ -384,7 +420,7 @@ impl Cpu {
             0xD6 => {let o = self.next_byte(); self.sub(o)} // SUB n8
             0xD7 => self.call(true, Some(0x10)), // CALL 10
             0xD8 => self.ret(self.regs.f.c_flag()), // RET C
-            0xD9 => {self.ret(true); self.scheduled_ime = true; return self.cycles;}, // RETI
+            0xD9 => {self.ret(true); self.scheduled_ime = true; return Some(self.cycles);}, // RETI
             0xDA => self.jp(self.regs.f.c_flag(), None), // JP C, nn
             0xDC => self.call(self.regs.f.c_flag(), None), // CALL C, nn
             0xDE => {let o = self.next_byte(); self.sbc(o)} // SBC A, n
@@ -403,24 +439,20 @@ impl Cpu {
             0xF0 => {let a = combine_u8s(self.next_byte(), 0xFF); self.regs.a = self.read(a)}, // LDH A, (n8)
             0xF1 => {let p = self.pop(); self.regs.set_af(p)} // POP AF
             0xF2 => self.regs.a = self.read(combine_u8s(self.regs.c, 0xFF)), // LD A, (C)
-            0xF3 => {self.scheduled_ime = false; return self.cycles;}, // DI
+            0xF3 => {self.scheduled_ime = false; return Some(self.cycles);}, // DI
             0xF5 => self.push(self.regs.af()), // PUSH AF
             0xF6 => {let o = self.next_byte(); self.or(o)} // OR A, n
             0xF7 => self.call(true, Some(0x30)), // RST 30
             0xF8 => {let o = self.next_byte(); let sp = self.add_sp(o as i8); self.regs.set_hl(sp)}, // LD HL, SP+e
             0xF9 => self.regs.sp = self.regs.hl(), // LD SP, HL
             0xFA => {let w = self.next_word(); self.regs.a = self.read(w)} // LD A, (n)
-            0xFB => {self.scheduled_ime = true; return self.cycles;}, // EI
+            0xFB => {self.scheduled_ime = true; return Some(self.cycles);}, // EI
             0xFE => {let o = self.next_byte(); self.cp(o)} // CP n8
             0xFF => self.call(true, Some(0x38)), // RST 38
             _ => panic!("unsupported opcode provided"),
         }
-        if self.scheduled_ime != self.ime {
-            self.ime = self.scheduled_ime;
-        }
-        return self.cycles;
+        None
     }
-
     fn process_prefixed(&mut self) {
         fn run_prefixed(dst: &mut u8, flags: &mut Flags, i: u8) {
             match i {

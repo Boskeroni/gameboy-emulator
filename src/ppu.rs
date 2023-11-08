@@ -16,6 +16,12 @@ pub struct Ppu {
     scanline_buffer: Vec<[u8; 4]>,
 }
 impl Ppu {
+    pub fn new(mem: Rc<RefCell<Memory>>) -> Self {
+        Self {
+            memory: mem,
+            scanline_buffer: Vec::new(),
+        }
+    }
     /// doesnt do anything with it. just gets it
     fn load_tile(&self, index: u8) -> u128 {
         self.memory.borrow().read_tile(index)
@@ -71,6 +77,10 @@ impl Ppu {
         todo!();
     }
     fn v_blank(&self) {
+        todo!();
+    }
+
+    pub fn render(&mut self) {
         todo!();
     }
 }
