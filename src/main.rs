@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![allow(unreachable_code)]
 
 mod cpu;
 mod memory;

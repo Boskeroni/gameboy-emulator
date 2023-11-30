@@ -4,12 +4,19 @@ use crate::{combine_u8s, split_u16};
 use crate::opcodes::*;
 use crate::registers::*;
 
+/// handles all the gameboy's logic and processing.
+/// It adds proper functionality to the `Registers` struct.
 pub struct Cpu {
+    //this isnt meant to be public however is for debug purposes
     pub regs: Registers,
     memory: Rc<RefCell<Memory>>,
     stopped: bool,
+    // two variables required as ime is changed after the next
+    // instruction, not after the current instruction
     scheduled_ime: bool,
     ime: bool,
+    // also for debug purposes, as it allows me to pinpoint
+    // which instructions may possibly be erring
     used: Vec<u8>,
     cycles: u8,
 }
@@ -66,7 +73,11 @@ impl Cpu {
 
     /// these functions handle the stack pointer and the 
     /// memory that is assigned to it. 
+    /// 
+    /// TODO: check if they idle on a written to address or the 
+    /// memory location one below it
     fn pop(&mut self) -> u16 {
+        // data isnt reset
         let lower = self.read(self.regs.sp);
         let higher = self.read(self.regs.sp+1);
         let answer = combine_u8s(lower, higher);
@@ -79,7 +90,7 @@ impl Cpu {
     }
 
     /// all the cpu opcodes which can be generalised to use any data
-    /// most if not all are mathematical instructions and store result in acc
+    /// most if not all are mathematical instructions and store the result in `self.regs.a`
     fn add(&mut self, data: u8) {
         self.regs.f.set_h_flag(half_carry_add(self.regs.a, data));
         let (result, carried) = self.regs.a.overflowing_add(data);
@@ -146,8 +157,7 @@ impl Cpu {
         self.regs.f.set_h_flag(true);
     }
     
-    /// these opcodes are all miscellanious and cover either
-    /// one or two opcodes which require special functionality
+
     fn add_u16(&mut self, r1: u16, r2: u16) -> u16 {
         let (result, carried) = r1.overflowing_add(r2);
         self.regs.f.set_n_flag(false);
@@ -155,7 +165,10 @@ impl Cpu {
         self.regs.f.set_c_flag(carried);
         result
     }
+
+    /// 
     fn add_sp(&mut self, r2: i8) -> u16 {
+        todo!();
         let res = self.regs.sp.wrapping_add_signed(r2 as i16);
         // if it was an addition
         if r2 >= 0 {
@@ -168,11 +181,16 @@ impl Cpu {
 
         res
     }
+
+    /// gets the data stored in the accumulator (a.k.a `self.regs.a`) into a 
+    /// valid BCD format. Not fully sure why it exists 
+    /// 
+    /// I will at some point create tests for this function as I may have mistaken the functionality
     fn daa(&mut self) {
         if !self.regs.f.n_flag() {
             // need to change the lower nybble
             if self.regs.f.h_flag() || self.regs.a&0xF > 9 {
-                self.regs.a += 6;
+                self.regs.a = self.regs.a.wrapping_add(6);
             }
             // need to change the upper nybble
             // we add 0x60 since the carry will reset it
@@ -189,6 +207,8 @@ impl Cpu {
             }
         }
     }
+    /// this instruction sets the `c`_flag` while reseting the n and h flag.
+    /// Useful to reset after previous comparisons/mathematical instructions
     fn cf(&mut self, val: bool) {
         self.regs.f.set_c_flag(val);
         self.regs.f.set_n_flag(false);
@@ -237,13 +257,14 @@ impl Cpu {
     }
 
     pub fn process_next(&mut self) -> u8 {
-        // reset the number of cycles for this instruction
+        // reset the number of cycles
         self.cycles = 0;
 
         // check for possible interupts
         let possible_interrupts = self.read(0xFF0F) & self.read(0xFFFF);
         if possible_interrupts != 0 && self.ime {
             // due to priority, we want to handle the interrupt furthest to the right.
+            // this will return the first one to handle
             let interrupt = possible_interrupts.trailing_zeros();
             match interrupt {
                 0 => self.call(true, Some(0x40)),
@@ -252,7 +273,7 @@ impl Cpu {
                 3 => self.call(true, Some(0x58)),
                 4 => self.call(true, Some(0x60)),
                 // this could technically happen but wtf is the programmer smoking
-                _ => println!("fucky interrupt") 
+                _ => println!("bad interrupt") 
             }
             // its up to the programmer to restart the ime
             // the gameboy unsets it immediately.
@@ -263,6 +284,7 @@ impl Cpu {
             return 20; // 20 T-cycles === 5 M-cycles
         } 
         let opcode = self.next_byte();
+        // if the opcode is prefixed
         if opcode == 0xCB {
             self.process_prefixed();
             if self.scheduled_ime != self.ime {
@@ -270,16 +292,18 @@ impl Cpu {
             }
             return self.cycles;
         }
-        if let Some(_) = self.process_unprefixed(opcode) {
+        // this means that an IME change is scheduled, therefore we do not change anything
+        if self.process_unprefixed(opcode) {
             return self.cycles;
         }
+        // an ime from a previous instruction was scheduled.
         if self.scheduled_ime != self.ime {
             self.ime = self.scheduled_ime;
         }
         return self.cycles;
     }
 
-    fn process_unprefixed(&mut self, opcode: u8) -> Option<u8> {
+    fn process_unprefixed(&mut self, opcode: u8) -> bool {
         match opcode {
             0x00 => {}, // NOP
             0x01 => {let w=self.next_word(); self.regs.set_bc(w)} // LD BC, nn
@@ -427,7 +451,7 @@ impl Cpu {
             0xD6 => {let o = self.next_byte(); self.sub(o)} // SUB n8
             0xD7 => self.call(true, Some(0x10)), // CALL 10
             0xD8 => self.ret(self.regs.f.c_flag()), // RET C
-            0xD9 => {self.ret(true); self.scheduled_ime = true; return Some(self.cycles);}, // RETI
+            0xD9 => {self.ret(true); self.scheduled_ime = true; return true}, // RETI
             0xDA => self.jp(self.regs.f.c_flag(), None), // JP C, nn
             0xDC => self.call(self.regs.f.c_flag(), None), // CALL C, nn
             0xDE => {let o = self.next_byte(); self.sbc(o)} // SBC A, n
@@ -446,20 +470,22 @@ impl Cpu {
             0xF0 => {let a = combine_u8s(self.next_byte(), 0xFF); self.regs.a = self.read(a)}, // LDH A, (n8)
             0xF1 => {let p = self.pop(); self.regs.set_af(p)} // POP AF
             0xF2 => self.regs.a = self.read(combine_u8s(self.regs.c, 0xFF)), // LD A, (C)
-            0xF3 => {self.scheduled_ime = false; return Some(self.cycles);}, // DI
+            0xF3 => {self.scheduled_ime = false; return true}, // DI
             0xF5 => self.push(self.regs.af()), // PUSH AF
             0xF6 => {let o = self.next_byte(); self.or(o)} // OR A, n
             0xF7 => self.call(true, Some(0x30)), // RST 30
             0xF8 => {let o = self.next_byte(); let sp = self.add_sp(o as i8); self.regs.set_hl(sp)}, // LD HL, SP+e
             0xF9 => self.regs.sp = self.regs.hl(), // LD SP, HL
             0xFA => {let w = self.next_word(); self.regs.a = self.read(w)} // LD A, (n)
-            0xFB => {self.scheduled_ime = true; return Some(self.cycles);}, // EI
+            0xFB => {self.scheduled_ime = true; return true}, // EI
             0xFE => {let o = self.next_byte(); self.cp(o)} // CP n8
             0xFF => self.call(true, Some(0x38)), // RST 38
             _ => panic!("unsupported opcode provided"),
         }
-        None
+        // no ime schedule change
+        false
     }
+    
     fn process_prefixed(&mut self) {
         fn run_prefixed(dst: &mut u8, flags: &mut Flags, i: u8) {
             match i {
