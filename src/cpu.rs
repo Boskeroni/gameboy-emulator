@@ -8,7 +8,7 @@ use crate::registers::*;
 /// It adds proper functionality to the `Registers` struct.
 pub struct Cpu {
     //this isnt meant to be public however is for debug purposes
-    pub regs: Registers,
+    pub regs: CpuRegisters,
     memory: Rc<RefCell<Memory>>,
     stopped: bool,
     // two variables required as ime is changed after the next
@@ -24,7 +24,7 @@ pub struct Cpu {
 impl Cpu {
     pub fn new(memory: Rc<RefCell<Memory>>) -> Self {
         Self {
-            regs: Registers::new(),
+            regs: CpuRegisters::new(),
             memory,
             stopped: false,
             scheduled_ime: false,
@@ -33,6 +33,7 @@ impl Cpu {
             cycles: 0,
         }
     }
+
     /// the read and write commands can read/write u8s to memory.
     /// the `read_u16` and `write_u16` simply make it more convenient
     /// and just end up calling the `read` and `write` commands
@@ -181,7 +182,6 @@ impl Cpu {
 
         res
     }
-
     /// gets the data stored in the accumulator (a.k.a `self.regs.a`) into a 
     /// valid BCD format. Not fully sure why it exists 
     /// 
@@ -485,7 +485,7 @@ impl Cpu {
         // no ime schedule change
         false
     }
-    
+
     fn process_prefixed(&mut self) {
         fn run_prefixed(dst: &mut u8, flags: &mut Flags, i: u8) {
             match i {

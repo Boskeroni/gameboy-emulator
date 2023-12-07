@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(unused)]
 #![allow(unreachable_code)]
 
 mod cpu;
@@ -7,7 +7,7 @@ mod registers;
 mod ppu;
 mod opcodes;
 
-use std::{env, cell::RefCell, rc::Rc};
+use std::{env, cell::RefCell, rc::Rc, ffi::c_uchar};
 use cpu::Cpu;
 use memory::Memory;
 use ppu::Ppu;
@@ -40,18 +40,23 @@ fn main() {
         Ok(f) => f,
     };
     
+    let window = create_window();
+
     // all the pillars of a gameboy emulator
     let memory = Rc::new(RefCell::new(Memory::new(rom)));
     let mut cpu = Cpu::new(memory.clone());
     let mut _ppu = Ppu::new(memory.clone());
 
     let mut cycles: usize = 0;
+    let mut new_cycles: u8 = 0;
+    // TODO: have this loop represent on M-cycle / 4 T-cycles, will make timings accurate
+    // will have to change the process
     loop {
-        cycles += cpu.process_next() as usize;
-        if cycles >= MAXCYCLES {
-            //ppu.render();
-            cycles = 0;
-        }
+        // TODO: benchmark to see if using a mut is quicker than redefining
+        new_cycles = cpu.process_next();
+        memory.borrow_mut().tick(new_cycles);
+
+        cycles += new_cycles as usize;
         // used for outputs during blarggs tests and since thatll be
         // all the gameboy roms ill be running for a while no point
         // in it being a seperate function. itll be easily deletable later
@@ -61,4 +66,8 @@ fn main() {
             memory.borrow_mut().write(0xFF02, 0);
         }
     }
+}
+
+fn create_window() {
+
 }

@@ -49,7 +49,7 @@ impl Flags {
 /// it should simply allow for allocation of registers and reading
 /// all logic should be handled in the cpu
 /// it won't question anything just trust the data
-pub struct Registers {
+pub struct CpuRegisters {
     pub a: u8,
 
     pub f: Flags,
@@ -64,7 +64,7 @@ pub struct Registers {
     pub pc: u16,
 }
 
-impl Registers {
+impl CpuRegisters {
     pub fn new() -> Self {
         Self {
             a: 0,
