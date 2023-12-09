@@ -15,12 +15,11 @@ enum PpuRegister {
     WX=0xFF4B, // x position of the left broder of the window (7 at left)
 }
 
-
 pub struct Ppu {
     memory: Rc<RefCell<Memory>>,
     scanline_buffer: Vec<[u8; 4]>,
-    background_fifo: u16,
-    sprite_fifo: u16,
+    background_fifo: u32,
+    sprite_fifo: u32,
 }
 impl Ppu {
     pub fn new(mem: Rc<RefCell<Memory>>) -> Self {
@@ -50,10 +49,9 @@ impl Ppu {
                 8 + if mode {8} else {0}
             };
 
-
             if potential[1] == 0 { continue; } // dont display at 0
-            if ly < potential[0] { continue; } // belongs to future scanline
-            if ly >= potential[0] + height { continue; } // belonged to a past scanline
+            if ly + 16 < potential[0] { continue; } // belongs to future scanline
+            if ly + 16 >= potential[0] + height { continue; } // belonged to a past scanline
             self.scanline_buffer.push(potential);
             // once we get to 10 sprites. its reached its max
             if self.scanline_buffer.len() == 10 {
@@ -62,23 +60,7 @@ impl Ppu {
         }
     }
     /// this transfers pixels to the LCD. The timings for the function can change though
-    fn fifo(&self) {
-        // background pixel fetching
-        // starts at the left of the background
-        let tile_x_pos = 0;
-        // 1) fetch tile number. find what tile we are about to add to the fifo
-
-    }
-    // this is just a waiting function after the scanline has finsihed
-    fn h_blank(&self) {
-        todo!();
-    }
-    /// this takes 456 * 10 = 4560 T-cycles
-    fn v_blank(&self) {
-        todo!();
-    }
-
-    pub fn render(&mut self) {
+    pub fn draw_scanline(&mut self) -> [u8; 144] {
         todo!();
     }
 }
