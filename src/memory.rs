@@ -1,3 +1,5 @@
+use std::fs;
+
 use crate::combine_u8s;
 
 /// just makes it more clear what my magic numbers are
@@ -11,11 +13,9 @@ enum TimingRegisters {
 }
 
 pub struct Memory {
-    memory: Vec<u8>,
+    pub memory: Vec<u8>,
     div: u16,
     overflow: bool,
-    dma_i: u16,
-    active_dma: bool
 }
 
 impl Memory {
@@ -29,31 +29,21 @@ impl Memory {
         let padding_amount = 65536 - memory.len();
         let padding_vec = vec![0; padding_amount];
         memory.extend(padding_vec);
-        Self { memory, div: 0, overflow: false, dma_i: 0, active_dma: false }
+        Self { memory, div: 0, overflow: false }
     }
 
     // this will just be oam dma
-    pub fn dma(&mut self) {
-        let src = (self.memory[0xFF46] as u16) << 8 + self.dma_i;
-        let dst = 0xFE00 + self.dma_i; // since it is just oam dma
-        
-        self.memory[dst as usize] = self.memory[src as usize];
-        self.dma_i += 1;
-        if self.dma_i == 160 {
-            // the dma transferred has ended
-            self.active_dma = false;
+    pub fn dma(&mut self, pos: u8) {
+        let src: usize = ((pos as u16) << 8) as usize;
+        let dst: usize = 0xFE00;
+        for i in 0..160 {
+            self.memory[dst+i] = self.memory[src+i];
         }
     }
 
     /// the gameboy's memory is responsible for the timing of the machine
     /// all timing logic is handled within this function
     pub fn tick(&mut self, cycles: u8) {
-        if self.active_dma {
-            for _ in 0..cycles/4 {
-                self.dma();
-            }
-        }
-
         // due to timings, the overflow logic can only be handled after the next instruction 
         if self.overflow {
             // set tima to tma and call an interrupt
@@ -80,24 +70,23 @@ impl Memory {
         self.memory[TimingRegisters::DIV as usize] = (self.div >> 8) as u8;
     }
 
-    pub fn write(&mut self, address: u16, data: u8) {
-        if self.active_dma {
-            return;
-        }
+    /// used as the internal way to writing to read only addresses
+    /// the gameboy ROM never uses this only the emulator does
+    pub fn unchecked_write(&mut self, address: u16, data: u8) {
+        self.memory[address as usize] = data;
+    }
 
+    pub fn write(&mut self, address: u16, data: u8) {
         let address = address as usize;
         if address < 0x8000 {
-            panic!("cannot handle swapping yet");
+            //panic!("cannot handle swapping yet, {address}");
         }
 
-        // edge case with the div register
-        if address == TimingRegisters::DIV as usize {
-            self.memory[address] = 0;
-            return;
-        }
         // this address means dma is starting
-        else if address == 0xFF46 {
-            self.active_dma = true;
+        if address == 0xFF46 {
+            self.dma(data)
+        } else if address == 0xFF44 {
+            return;
         }
 
         self.memory[address] = data;
@@ -108,14 +97,8 @@ impl Memory {
         }
     }
     pub fn read(&self, address: u16) -> u8 {
-        if self.active_dma {
-            let src = (self.memory[0xFF46] as u16) << 8 + self.dma_i;
-            return self.memory[src as usize];
-        }
         self.memory[address as usize]
     }
-
-
 
     /// these are all the functions for collecting pixel data for the ppu
     pub fn read_oam(&self, index: u8) -> [u8; 4] {
@@ -137,12 +120,23 @@ impl Memory {
             let msb = self.memory[src+i*2+1];
             for j in 0..8 {
                 row_data = row_data << 2;
-                let new_data = ((lsb & (0b1000_0000>>j)) + (msb & (0b1000_0000>>j)) * 2) as u16;
-                row_data += new_data;
+                
+                if lsb & (0b1000_0000 >> j) != 0 {
+                    row_data |= 0b0000_0001;
+                }
+                if msb & (0b1000_0000) >> j != 0 {
+                    row_data |= 0b0000_0010;
+                }
             }
-
             tile_data[i] = row_data
         }
         tile_data.try_into().unwrap()
+    }
+    pub fn read_map(&self, index: u8) -> [u8; 1024] {
+        if index > 1 {
+            panic!("invalid map index: {index}")
+        }
+        let address = 0x9800 + ((index as usize)*1024);
+        self.memory[address..(address+1024)].try_into().unwrap()
     }
 }

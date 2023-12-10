@@ -11,7 +11,7 @@ use cpu::Cpu;
 use ppu::Ppu;
 use memory::Memory;
 
-use std::{env, cell::RefCell, rc::Rc};
+use std::{env, cell::RefCell, rc::Rc, time::Instant, fs::File, io::Write};
 use pixels::{SurfaceTexture, Pixels, Error};
 use winit::{
     dpi::LogicalSize, 
@@ -33,8 +33,10 @@ pub fn combine_u8s(lsb: u8, msb: u8) -> u16 {
 pub fn split_u16(a: u16) -> (u8, u8) {
     ((a >> 8) as u8, (a & 0xFF) as u8)
 }
-///https://www.reddit.com/r/EmuDev/comments/4o2t6k/how_do_you_emulate_specific_cpu_speeds/
-const MAXCYCLES: usize = 69905/60;
+
+// this number represents the number of cycles which each scanline will use up
+const MAXCYCLES: usize = 453;
+
 const SCREEN_HEIGHT: u32 = 160;
 const SCREEN_WIDTH: u32 = 144;
 
@@ -65,38 +67,70 @@ fn main() {
     // all the pillars of a gameboy emulator
     let memory = Rc::new(RefCell::new(Memory::new(rom)));
     let mut cpu = Cpu::new(memory.clone());
-    let mut _ppu = Ppu::new(memory.clone());
+    let mut ppu = Ppu::new(memory.clone());
 
-    let mut cycles: usize = 0;
-    let mut new_cycles: u8 = 0;
-    let mut redraws = 0;
-
+    // this cycle needs to run at below 16-milliseconds
     event_loop.run(move |event, elwt| {
+        let mut new_frame_data: Vec<u8> = Vec::new();
         // handling the screen/inputs
         // rendering isnt done here as it wouldnt be able to follow the timings i would want it to
         match event {
-            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
-                elwt.exit();
-            }
-            Event::UserEvent(event) => {
-                println!("{event:?}");
-            }
+            Event::WindowEvent { event, .. } => {
+                match event {
+                    WindowEvent::CloseRequested => {
+                        let mut debug_file = File::create("debug.gb").unwrap();
+                        debug_file.write_all(&memory.borrow().memory).unwrap();
+                        elwt.exit();
+                    }
+                    WindowEvent::KeyboardInput { event, .. } => {
+                        use winit::keyboard::{PhysicalKey::Code, KeyCode};
+
+                        if let Code(e) = event.physical_key {
+                            match e {
+                                // this space will be used to handle all the inputs
+                                // i honestly dont know how else to do this without the 
+                                // many many inputs
+
+                                // just as an experiment, q => quit
+                                KeyCode::KeyQ => elwt.exit(),
+                                _ => ()
+                            }
+                        }
+                    }
+                    _ => ()
+                }
+            },
+            Event::AboutToWait => {
+                // run a scanlines worth of processing per scanline
+                for ly in 0..154 {
+                    // update the ly value for the ppu
+                    memory.borrow_mut().unchecked_write(0xFF44, ly);
+
+                    let mut cycles = 0;
+                    // handling the actual gameboy
+                    // this handles everything for one scan-line.
+                    while cycles < MAXCYCLES {
+                        let new_cycles = cpu.process_next();
+                        memory.borrow_mut().tick(new_cycles);
+                        cycles += new_cycles as usize;
+                    }
+                    // get the new scanline ready
+                    new_frame_data.append(&mut ppu.draw_scanline());
+                }
+                for (i, pixel) in pixels.frame_mut().chunks_exact_mut(4).enumerate() {
+                    let new_pixel = pallete_to_rgba(new_frame_data[i]);
+                    pixel[0] = new_pixel.0;
+                    pixel[1] = new_pixel.1;
+                    pixel[2] = new_pixel.2;
+                    pixel[3] = 255;
+                }
+
+                // render the frame
+                pixels.render().unwrap();
+                window.request_redraw();
+            },
             _ => ()
         }
-        // handling the actual gameboy
-        while cycles < MAXCYCLES {
-            new_cycles = cpu.process_next();
-            memory.borrow_mut().tick(new_cycles);
-    
-            cycles += new_cycles as usize;
-            println!("{cycles}, {redraws}");
-            if memory.borrow().read(0xFF02) == 0x81 {
-                let c = memory.borrow().read(0xFF01) as char;
-                print!("{c}");
-                memory.borrow_mut().write(0xFF02, 0);
-            }
-        }
-        cycles = 0;
     });
 }
 
@@ -111,5 +145,15 @@ fn get_rom() -> Vec<u8> {
     match std::fs::read(rom_path) {
         Err(_) => panic!("invalid file provided"),
         Ok(f) => f,
+    }
+}
+
+fn pallete_to_rgba(i: u8) -> (u8, u8, u8) {
+    match i {
+        0 => (0x00, 0x00, 0x00),
+        1 => (0x50, 0x50, 0x50),
+        2 => (0xA0, 0xA0, 0xA0),
+        3 => (0xFF, 0xFF, 0xFF),
+        _ => panic!("invalid pallete index"),
     }
 }

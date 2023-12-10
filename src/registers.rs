@@ -94,12 +94,14 @@ impl CpuRegisters {
     pub fn hl(&self) -> u16 { combine_u8s(self.l, self.h) }
 
     pub fn hli(&mut self) -> u16 {
-        self.set_hl(self.hl()+1);
-        self.hl()-1
+        let og = self.hl();
+        self.set_hl(og.wrapping_add(1));
+        og
     }
     pub fn hld(&mut self) -> u16 {
-        self.set_hl(self.hl()-1);
-        self.hl()+1
+        let og = self.hl();
+        self.set_hl(og.wrapping_sub(1));
+        og
     }
     pub fn af(&self) -> u16 {
         combine_u8s(self.f.as_u8(), self.a)
