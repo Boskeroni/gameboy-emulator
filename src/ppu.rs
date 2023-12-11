@@ -63,20 +63,20 @@ impl Ppu {
             return  vec![0; 160];
         }
         self.oam_scan();
+        self.scanline_buffer.sort_by(|a, b| a[1].cmp(&b[1]));
+
         
-
-        let mut new_scanline = Vec::new();
-
         let scanline_y = self.read_memory(PpuRegister::LY as u16);
         let scroll_x = self.read_memory(PpuRegister::SCX as u16);
         let scroll_y = self.read_memory(PpuRegister::SCY as u16);
 
         let background_pallete = self.read_memory(PpuRegister::BGP as u16);
-        let background_map = if lcdc & 0b0000_1000 != 0 { self.memory.borrow().read_map(0) } else { self.memory.borrow().read_map(1) };
+        let background_index = (lcdc & 0b0000_1000) >> 3;
+        let background_map = self.memory.borrow().read_map(background_index);
 
+        let mut new_scanline = Vec::new();
 
-        // implement the window later. TODO
-        // 168 / 8 = 21
+        // TODO: implement window and the sprites
         for i in 0..21 {
             let background_pos_x = scroll_x.wrapping_add(i*8); // the pixel position in the background
             let background_pos_y = scroll_y.wrapping_add(scanline_y); 
@@ -99,13 +99,8 @@ impl Ppu {
             }
 
             // now get the oam stuff
-
+            
         }
-
-
-
-
-
         
         // handle the interrupt(s)
         if self.read_memory(0xFF44) == self.read_memory(0xFF45) {

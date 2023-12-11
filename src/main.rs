@@ -1,5 +1,6 @@
 #![allow(unused)]
 #![allow(unreachable_code)]
+#![allow(unsafe_code)]
 
 mod cpu;
 mod memory;

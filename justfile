@@ -7,4 +7,4 @@ release:
     cargo build --release
 
 run ROM:
-    cargo run roms/{{ROM}}
+    cargo run roms/{{ROM}}.gb
